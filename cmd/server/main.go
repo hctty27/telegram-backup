@@ -63,6 +63,10 @@ func run()error{
    cloud:=&storage.Managed{Pool:pool,Box:box}
    engine:=&backup.Engine{Pool:pool,Telegram:service,Cloud:cloud,Quota:q,Progress:monitor.New(),Root:stage,MaxFile:quotaBytes}
    jobs,err:=queue.New(pool,engine.Handlers());if err!=nil{return err};engine.Jobs=jobs
+   residentCtx,cancelResidents:=context.WithCancel(ctx)
+   residents:=telegram.NewResidents(residentCtx,service,engine.IngestLive)
+   service.Residents=residents
+   defer func(){cancelResidents();residents.Wait()}()
    actions:=&api.Actions{Pool:pool,Telegram:service,Login:login,Engine:engine,Managed:cloud}
    handler,err=api.NewDashboardRouter(pool,os.Getenv("V2_ADMIN_TOKEN"),assets,actions.Routes)
    if err!=nil{return err}
@@ -71,11 +75,12 @@ func run()error{
    go func(){
     ticker:=time.NewTicker(15*time.Second);defer ticker.Stop()
     for{
+     if err:=residents.Reconcile(residentCtx);err!=nil&&residentCtx.Err()==nil{slog.Warn("Telegram connection reconciliation failed")}
      if err:=engine.Schedule(ctx);err!=nil&&ctx.Err()==nil{slog.Warn("backup scheduling failed","type","database or queue error")}
      select{case <-ctx.Done():return;case <-ticker.C:}
     }
    }()
-   slog.Info("V2 polling backup engine enabled")
+   slog.Info("V2 realtime and polling backup engine enabled")
   }else{
    handler,err=api.NewDashboardRouter(pool,os.Getenv("V2_ADMIN_TOKEN"),assets)
    if err!=nil{return err}
