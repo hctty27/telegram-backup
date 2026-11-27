@@ -11,12 +11,20 @@ import (
  "io"
  "os"
  "path/filepath"
+ "strconv"
+ "strings"
+ "sync"
 
  "github.com/hctty27/telegram-backup/internal/disk"
 )
 
 const ResumeAlignment int64=4096
 const checkpointInterval int64=4<<20
+
+// Protect inactive checkpoint eviction against concurrent download admission.
+// The application owns a single private staging directory per process.
+var resumeMu sync.Mutex
+var activeResumes=map[string]bool{}
 
 type ResumeFetch func(context.Context,int64,io.Writer)error
 type checkpoint struct{
@@ -82,6 +90,11 @@ func StageResume(ctx context.Context,root string,id,expected int64,identity stri
  if _,err=os.Lstat(dest);!errors.Is(err,os.ErrNotExist){return "",errors.New("completed stage already exists or cannot be inspected")}
  part:=filepath.Join(root,fmt.Sprintf("%d.resume.part",id))
  meta:=filepath.Join(root,fmt.Sprintf("%d.resume.json",id))
+ resumeMu.Lock()
+ if activeResumes[part]{resumeMu.Unlock();return "",errors.New("download already owns partial")}
+ activeResumes[part]=true
+ resumeMu.Unlock()
+ defer func(){resumeMu.Lock();delete(activeResumes,part);resumeMu.Unlock()}()
  for _,p:=range []string{part,meta}{
   if _,err=regularPrivate(p);err!=nil&&!errors.Is(err,os.ErrNotExist){return "",err}
  }
@@ -106,14 +119,16 @@ func StageResume(ctx context.Context,root string,id,expected int64,identity stri
  // Reset invalid metadata before beginning. On a crash, old metadata cannot
  // authorize a prefix whose identity or digest no longer matches.
  if err=saveCheckpoint(root,meta,f,c);err!=nil{return "",err}
- release,err:=quota.Reserve(expected-c.Offset);if err!=nil{return "",err};defer release()
+ release,err:=reserveResume(root,part,expected-c.Offset,quota);if err!=nil{return "",err};defer release()
  w:=&resumeWriter{f:f,h:h,root:root,path:meta,c:c,done:c.Offset}
  if err=fetch(ctx,c.Offset,w);err!=nil{
   if checkpointErr:=w.checkpoint(true);checkpointErr!=nil{return "",errors.Join(err,checkpointErr)}
+  // Uncheckpointed tail is not trusted and need not consume disk while idle.
+  if trimErr:=f.Truncate(w.c.Offset);trimErr!=nil{return "",errors.Join(err,trimErr)}
   return "",err
  }
  if err=ctx.Err();err!=nil{_ = w.checkpoint(true);return "",err}
- if w.done!=expected{return "",errors.New("download size mismatch")}
+ if w.done!=expected{_ = w.checkpoint(true);_ = f.Truncate(w.c.Offset);return "",errors.New("download size mismatch")}
  if err=f.Sync();err!=nil{return "",err}
  if err=f.Close();err!=nil{return "",err}
  if err=os.Link(part,dest);err!=nil{return "",err}
@@ -140,4 +155,34 @@ func RecoverPublished(root string,id int64)error{
   if err=os.Remove(meta);err!=nil{return err}
  }else if !errors.Is(err,os.ErrNotExist){return err}
  return syncDirectory(root)
+}
+
+// When staging is under pressure, evict only inactive, unverified partials,
+// never completed files or another worker's active file. An evicted job
+// starts from zero on retry. Do not evict just because measurement failed.
+// The retry caller can later try again after uploads release space.
+func reserveResume(root,own string,remaining int64,quota *disk.Manager)(func(),error){
+ resumeMu.Lock();defer resumeMu.Unlock()
+ release,err:=quota.Reserve(remaining)
+ if !errors.Is(err,disk.ErrCapacity){return release,err}
+ entries,e:=os.ReadDir(root);if e!=nil{return nil,e}
+ for _,entry:=range entries{
+  name:=entry.Name()
+  if !strings.HasSuffix(name,".resume.part"){continue}
+  stem:=strings.TrimSuffix(name,".resume.part")
+  id,e:=strconv.ParseInt(stem,10,64);if e!=nil||id<=0||strconv.FormatInt(id,10)!=stem{continue}
+  p:=filepath.Join(root,name)
+  if p==own||activeResumes[p]{continue}
+  if _,e=regularPrivate(p);e!=nil{continue}
+  if _,e=os.Lstat(filepath.Join(root,stem+".media"));!errors.Is(e,os.ErrNotExist){continue}
+  meta:=filepath.Join(root,stem+".resume.json")
+  if _,e=regularPrivate(meta);e==nil{
+   if e=os.Remove(meta);e!=nil{return nil,e}
+  }else if !errors.Is(e,os.ErrNotExist){continue}
+  if e=os.Remove(p);e!=nil{return nil,e}
+  if e=syncDirectory(root);e!=nil{return nil,e}
+  release,err=quota.Reserve(remaining)
+  if !errors.Is(err,disk.ErrCapacity){return release,err}
+ }
+ return nil,err
 }
