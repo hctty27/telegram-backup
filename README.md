@@ -15,7 +15,7 @@ docker compose up -d --build
 docker compose ps
 ```
 
-密钥初始化命令仅适用于首次安装；若 .env 已存在，不要覆盖，应保留原密钥。默认宿主机监听 127.0.0.1:8080，可通过 .env 中的 `TGB_PORT` 自定义宿主机端口；容器内部端口仍为 8080。通过 SSH 隧道或可信 HTTPS 反向代理访问；不要直接公开 HTTP。使用 .env 中的管理令牌登录。保留并安全备份数据库、加密密钥和应用卷；不要运行 `docker compose down -v` 清理生产环境。
+密钥初始化命令仅适用于首次安装；若 .env 已存在，不要覆盖，应保留原密钥。默认宿主机监听 0.0.0.0:8080，可通过服务器 IP 访问。通过 .env 中的 `TGB_BIND_ADDR` 和 `TGB_PORT` 自定义监听地址及宿主机端口；容器内部端口为 8080。公网访问请限制防火墙来源并使用可信 HTTPS 反向代理，避免明文传输管理令牌；仅代理访问时可将 TGB_BIND_ADDR 设为 127.0.0.1。使用 .env 中的管理令牌登录。保留并安全备份数据库、加密密钥和应用卷；不要运行 `docker compose down -v` 清理生产环境。
 
 1. 添加 Telegram API ID / Hash，扫码并完成可选的 2FA。
 2. 配置 Google Drive。支持桌面 OAuth Token 导入；直接网页授权需自己的 Web OAuth Client、Drive API 和精确的 HTTPS 回调 `TGB_GOOGLE_REDIRECT_URI`。
