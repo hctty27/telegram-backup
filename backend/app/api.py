@@ -3,9 +3,22 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.config_store import encryption_ready, get_config_value, set_config_value
 from app.database import get_db
 from app.models import BackupTask, Chat, MediaFile
-from app.schemas import ChatOut, ChatUpdate, TaskOut
+from app.schemas import (
+    BackupSettingsIn,
+    ChatOut,
+    ChatUpdate,
+    GoogleDriveRemoteIn,
+    StorageDestinationIn,
+    StorageTestIn,
+    TaskOut,
+    TelegramCodeIn,
+    TelegramCredentialsIn,
+    TelegramPasswordIn,
+    TelegramPhoneIn,
+)
 from app.security import require_admin
 
 router = APIRouter(
@@ -59,9 +72,11 @@ async def list_chats(db: AsyncSession = Depends(get_db)):
 async def sync_chats(request: Request, db: AsyncSession = Depends(get_db)):
     telegram = request.app.state.telegram
     if not telegram.connected:
+        await telegram.connect()
+    if not telegram.connected:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Telegram is not authorized. Run the Telegram session login command first.",
+            detail="Telegram is not authorized. Configure Telegram API credentials and complete login in Settings.",
         )
 
     dialogs = await telegram.list_dialogs()
@@ -155,12 +170,145 @@ async def retry_task(task_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/settings")
-async def get_settings(request: Request):
+async def get_settings(request: Request, db: AsyncSession = Depends(get_db)):
+    storage = request.app.state.storage
+    await storage.import_legacy_config(db)
+    api_id = await get_config_value(db, "telegram_api_id", str(settings.telegram_api_id) if settings.telegram_api_id else None)
+    api_hash = await get_config_value(db, "telegram_api_hash", settings.telegram_api_hash)
+    destination = await get_config_value(db, "storage_destination", settings.rclone_remote)
+    remotes = await storage.list_remotes()
     telegram = request.app.state.telegram
     return {
-        "telegram_configured": telegram.configured,
+        "telegram_configured": bool(api_id and api_hash),
         "telegram_authorized": telegram.connected,
-        "rclone_configured": settings.rclone_config.is_file(),
-        "rclone_remote": settings.rclone_remote,
-        "scan_interval_seconds": settings.backup_scan_interval_seconds,
+        "telegram_api_id": int(api_id) if api_id else None,
+        "rclone_configured": bool(remotes),
+        "rclone_remote": destination,
+        "rclone_remotes": remotes,
+        "scan_interval_seconds": int(
+            await get_config_value(
+                db,
+                "backup_scan_interval_seconds",
+                str(settings.backup_scan_interval_seconds),
+            ) or settings.backup_scan_interval_seconds
+        ),
+        "encryption_ready": encryption_ready(),
     }
+
+
+@router.put("/settings/telegram")
+async def update_telegram_credentials(
+    payload: TelegramCredentialsIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    if not encryption_ready():
+        raise HTTPException(status_code=503, detail="APP_ENCRYPTION_KEY is not configured or invalid.")
+    api_hash = (payload.api_hash or "").strip()
+    if api_hash:
+        await set_config_value(db, "telegram_api_hash", api_hash, secret=True)
+    else:
+        api_hash = await get_config_value(db, "telegram_api_hash") or ""
+    if not api_hash:
+        raise HTTPException(status_code=400, detail="Telegram API Hash is required.")
+    await set_config_value(db, "telegram_api_id", str(payload.api_id))
+    await db.commit()
+    try:
+        await request.app.state.telegram.configure(payload.api_id, api_hash)
+    except Exception:
+        # Credentials are persisted; the background worker will retry the Telegram connection.
+        pass
+    return {
+        "configured": True,
+        "authorized": request.app.state.telegram.connected,
+        "message": "Telegram API credentials saved. Complete account login below.",
+    }
+
+
+@router.post("/settings/telegram/send-code")
+async def send_telegram_code(payload: TelegramPhoneIn, request: Request):
+    try:
+        await request.app.state.telegram.send_login_code(payload.phone.strip())
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Telegram could not send a code. Check the phone number and try again.") from exc
+    return {"sent": True}
+
+
+@router.post("/settings/telegram/verify-code")
+async def verify_telegram_code(payload: TelegramCodeIn, request: Request):
+    try:
+        authorized = await request.app.state.telegram.verify_login_code(payload.code.strip())
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Telegram verification failed. Check the code and try again.") from exc
+    return {"authorized": authorized, "needs_password": not authorized}
+
+
+@router.post("/settings/telegram/verify-password")
+async def verify_telegram_password(payload: TelegramPasswordIn, request: Request):
+    try:
+        authorized = await request.app.state.telegram.verify_login_password(payload.password)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Telegram two-step verification failed. Check the password and try again.") from exc
+    return {"authorized": authorized}
+
+
+@router.post("/settings/storage/google-drive")
+async def add_google_drive_remote(
+    payload: GoogleDriveRemoteIn,
+    request: Request,
+):
+    try:
+        destination = await request.app.state.storage.create_google_drive_remote(
+            name=payload.name.strip(),
+            client_id=payload.client_id,
+            client_secret=payload.client_secret,
+            token_json=payload.token_json,
+            root_folder_id=payload.root_folder_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"created": True, "destination": destination}
+
+
+@router.post("/settings/storage/test")
+async def test_storage(
+    payload: StorageTestIn,
+    request: Request,
+):
+    try:
+        await request.app.state.storage.test_destination(payload.destination)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "message": "Cloud storage connection succeeded."}
+
+
+@router.put("/settings/storage/default")
+async def set_default_storage(
+    payload: StorageDestinationIn,
+    request: Request,
+):
+    try:
+        destination = await request.app.state.storage.set_destination(payload.destination)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"destination": destination}
+
+
+@router.put("/settings/backup")
+async def update_backup_settings(
+    payload: BackupSettingsIn,
+    db: AsyncSession = Depends(get_db),
+):
+    await set_config_value(
+        db,
+        "backup_scan_interval_seconds",
+        str(payload.scan_interval_seconds),
+    )
+    await db.commit()
+    return {"scan_interval_seconds": payload.scan_interval_seconds}

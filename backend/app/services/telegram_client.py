@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator
 
 from telethon import TelegramClient
+from telethon.errors import SessionPasswordNeededError
 
 from app.config import settings
 
@@ -9,32 +10,50 @@ from app.config import settings
 class TelegramService:
     def __init__(self) -> None:
         self.client: TelegramClient | None = None
+        self.api_id: int | None = None
+        self.api_hash: str | None = None
         self.authorized = False
+        self._login_phone: str | None = None
+        self._phone_code_hash: str | None = None
 
     @property
     def configured(self) -> bool:
-        return bool(settings.telegram_api_id and settings.telegram_api_hash)
+        return bool(self.api_id and self.api_hash)
 
     @property
     def connected(self) -> bool:
         return bool(self.client and self.client.is_connected() and self.authorized)
 
-    async def connect(self) -> bool:
-        if not self.configured:
-            return False
+    async def configure(self, api_id: int, api_hash: str) -> bool:
+        changed = self.api_id != int(api_id) or self.api_hash != api_hash
+        if changed and self.client is not None:
+            await self.disconnect()
+            self.client = None
+        self.api_id = int(api_id)
+        self.api_hash = api_hash
+        self._login_phone = None
+        self._phone_code_hash = None
+        return await self.connect()
 
+    def _ensure_client(self) -> TelegramClient:
+        if not self.configured:
+            raise RuntimeError("Telegram API ID and API Hash have not been configured.")
         if self.client is None:
             Path(settings.telegram_session).parent.mkdir(parents=True, exist_ok=True)
             self.client = TelegramClient(
                 settings.telegram_session,
-                settings.telegram_api_id,
-                settings.telegram_api_hash,
+                self.api_id,
+                self.api_hash,
             )
+        return self.client
 
-        if not self.client.is_connected():
-            await self.client.connect()
-
-        self.authorized = await self.client.is_user_authorized()
+    async def connect(self) -> bool:
+        if not self.configured:
+            return False
+        client = self._ensure_client()
+        if not client.is_connected():
+            await client.connect()
+        self.authorized = await client.is_user_authorized()
         return self.authorized
 
     async def disconnect(self) -> None:
@@ -42,12 +61,53 @@ class TelegramService:
             await self.client.disconnect()
         self.authorized = False
 
+    async def send_login_code(self, phone: str) -> None:
+        if not self.configured:
+            raise RuntimeError("Save Telegram API ID and API Hash first.")
+        client = self._ensure_client()
+        if not client.is_connected():
+            await client.connect()
+        if await client.is_user_authorized():
+            self.authorized = True
+            raise RuntimeError("This Telegram session is already authorized.")
+        sent = await client.send_code_request(phone)
+        self._login_phone = phone
+        self._phone_code_hash = sent.phone_code_hash
+
+    async def verify_login_code(self, code: str) -> bool:
+        if not self.client or not self.client.is_connected():
+            raise RuntimeError("Login session expired. Request a new verification code.")
+        if not self._login_phone or not self._phone_code_hash:
+            raise RuntimeError("No pending Telegram login. Request a verification code first.")
+        try:
+            await self.client.sign_in(
+                phone=self._login_phone,
+                code=code,
+                phone_code_hash=self._phone_code_hash,
+            )
+        except SessionPasswordNeededError:
+            return False
+        self.authorized = await self.client.is_user_authorized()
+        self._login_phone = None
+        self._phone_code_hash = None
+        return self.authorized
+
+    async def verify_login_password(self, password: str) -> bool:
+        if not self.client or not self.client.is_connected():
+            raise RuntimeError("Login session expired. Request a new verification code.")
+        await self.client.sign_in(password=password)
+        self.authorized = await self.client.is_user_authorized()
+        self._login_phone = None
+        self._phone_code_hash = None
+        return self.authorized
+
     async def list_dialogs(self) -> list[dict[str, Any]]:
         if not self.connected:
+            await self.connect()
+        if not self.connected or self.client is None:
             raise RuntimeError("Telegram account is not authorized")
 
         items: list[dict[str, Any]] = []
-        assert self.client is not None
         async for dialog in self.client.iter_dialogs():
             entity = dialog.entity
             entity_name = type(entity).__name__.lower()
@@ -73,6 +133,8 @@ class TelegramService:
         telegram_chat_id: int,
         min_id: int = 0,
     ) -> AsyncIterator[Any]:
+        if not self.connected or self.client is None:
+            await self.connect()
         if not self.connected or self.client is None:
             raise RuntimeError("Telegram account is not authorized")
 

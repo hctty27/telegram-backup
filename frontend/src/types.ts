@@ -35,7 +35,10 @@ export interface BackupTask {
 export interface AppSettings {
   telegram_configured: boolean;
   telegram_authorized: boolean;
+  telegram_api_id: number | null;
   rclone_configured: boolean;
   rclone_remote: string;
+  rclone_remotes: string[];
   scan_interval_seconds: number;
+  encryption_ready: boolean;
 }

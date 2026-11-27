@@ -4,8 +4,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.config import settings
+from app.config_store import get_config_value
+from app.database import SessionLocal, engine, init_database
 from app.api import router
-from app.database import engine, init_database
 from app.services.backup_worker import BackupWorker
 from app.services.storage import RcloneStorage
 from app.services.telegram_client import TelegramService
@@ -20,8 +22,20 @@ logging.basicConfig(
 async def lifespan(app: FastAPI):
     await init_database()
     telegram = TelegramService()
-    worker = BackupWorker(telegram, RcloneStorage())
+    storage = RcloneStorage()
+
+    async with SessionLocal() as db:
+        api_id = await get_config_value(db, "telegram_api_id", str(settings.telegram_api_id) if settings.telegram_api_id else None)
+        api_hash = await get_config_value(db, "telegram_api_hash", settings.telegram_api_hash)
+    if api_id and api_hash:
+        try:
+            await telegram.configure(int(api_id), api_hash)
+        except Exception:
+            logging.getLogger(__name__).exception("Could not initialize Telegram session")
+
+    worker = BackupWorker(telegram, storage)
     app.state.telegram = telegram
+    app.state.storage = storage
     worker_task = asyncio.create_task(worker.run(), name="telegram-backup-worker")
     try:
         yield
@@ -38,7 +52,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="TelegramBackup API",
-    version="0.1.0",
+    version="0.2.0",
     description="Self-hosted Telegram media backup management API",
     lifespan=lifespan,
 )

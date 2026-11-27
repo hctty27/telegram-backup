@@ -7,6 +7,7 @@ from pathlib import Path
 from sqlalchemy import func, select
 
 from app.config import settings
+from app.config_store import get_config_value
 from app.database import SessionLocal
 from app.models import BackupTask, Chat, MediaFile
 from app.services.storage import RcloneStorage
@@ -64,8 +65,13 @@ class BackupWorker:
 
     async def _enqueue_due_chats(self) -> None:
         now = datetime.utcnow()
-        cutoff = now - timedelta(seconds=max(60, settings.backup_scan_interval_seconds))
         async with SessionLocal() as db:
+            interval = await get_config_value(
+                db,
+                "backup_scan_interval_seconds",
+                str(settings.backup_scan_interval_seconds),
+            )
+            cutoff = now - timedelta(seconds=max(60, int(interval or 300)))
             result = await db.execute(
                 select(Chat).where(Chat.backup_enabled.is_(True))
             )
@@ -129,6 +135,7 @@ class BackupWorker:
                 if not self.telegram.connected:
                     raise RuntimeError("Telegram account is not authorized.")
 
+                destination_root = await self.storage.get_destination()
                 async for message in self.telegram.iter_messages(
                     chat.telegram_id,
                     min_id=chat.last_message_id,
@@ -201,7 +208,7 @@ class BackupWorker:
 
                     message_date = message.date
                     remote_path = (
-                        f"{settings.rclone_remote.rstrip('/')}/"
+                        f"{destination_root.rstrip('/')}/"
                         f"{chat.telegram_id}/"
                         f"{message_date:%Y/%m}/"
                         f"{message.id}-{filename}"

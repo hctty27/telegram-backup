@@ -33,6 +33,7 @@ import {
   ThunderboltOutlined
 } from "@ant-design/icons";
 import { createApi } from "./api";
+import SettingsPage from "./SettingsPage";
 import type { AppSettings, BackupTask, Chat, DashboardStats } from "./types";
 
 const { Header, Sider, Content } = Layout;
@@ -304,7 +305,7 @@ export default function App() {
                   type="warning"
                   showIcon
                   message="Telegram 尚未授权"
-                  description="请先在服务器执行 docker compose run --rm backend python scripts/login_telegram.py，完成账号登录后再同步群组。"
+                  description="请进入「系统设置 → Telegram 账号」，填写 API ID / API Hash，然后通过手机号验证码完成登录。"
                 />
               )}
               {!settings?.rclone_configured && (
@@ -312,7 +313,7 @@ export default function App() {
                   type="info"
                   showIcon
                   message="尚未配置 rclone"
-                  description="请将 rclone 配置文件放入 ./rclone/rclone.conf，并在 .env 中设置目标 remote。"
+                  description="请进入「系统设置 → 云存储」，添加 Google Drive 或选择已有 rclone Remote，并测试连接。"
                 />
               )}
               <Row gutter={[16, 16]}>
@@ -346,24 +347,8 @@ export default function App() {
             </Card>
           )}
 
-          {page === "settings" && (
-            <Space direction="vertical" size={16} className="full-width">
-              <Card title="服务连接状态" className="panel-card">
-                <Descriptions column={1} bordered>
-                  <Descriptions.Item label="Telegram API 配置">{settings?.telegram_configured ? <Tag color="success">已配置</Tag> : <Tag color="warning">未配置</Tag>}</Descriptions.Item>
-                  <Descriptions.Item label="Telegram 用户授权">{settings?.telegram_authorized ? <Tag color="success">已授权</Tag> : <Tag color="error">未授权</Tag>}</Descriptions.Item>
-                  <Descriptions.Item label="rclone 配置文件">{settings?.rclone_configured ? <Tag color="success">已找到</Tag> : <Tag color="warning">未找到</Tag>}</Descriptions.Item>
-                  <Descriptions.Item label="备份目标"><Text code>{settings?.rclone_remote || "—"}</Text></Descriptions.Item>
-                  <Descriptions.Item label="增量扫描间隔">{settings?.scan_interval_seconds ?? "—"} 秒</Descriptions.Item>
-                </Descriptions>
-              </Card>
-              <Card title="服务器配置" className="panel-card">
-                <Paragraph>配置项保存在服务器根目录的 .env 文件中。修改后需要重启服务：</Paragraph>
-                <pre className="command-block">docker compose restart backend</pre>
-                <Paragraph type="secondary">Telegram API ID / API Hash、管理员 Token 和 rclone 配置不会发送到浏览器。</Paragraph>
-              </Card>
-            </Space>
-          )}
+          {page === "settings" && <SettingsPage api={api} onRefresh={loadData} />}
+
         </Content>
       </Layout>
     </Layout>

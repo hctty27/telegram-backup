@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "TelegramBackup"
     admin_token: str = "replace-with-a-long-random-secret"
+    app_encryption_key: str | None = None
 
     telegram_api_id: int | None = None
     telegram_api_hash: str | None = None

@@ -32,6 +32,52 @@ export function createApi(token: string) {
     startBackup: (id: number) =>
       request<BackupTask>(`/chats/${id}/backup`, { method: "POST" }),
     retryTask: (id: number) =>
-      request<BackupTask>(`/tasks/${id}/retry`, { method: "POST" })
+      request<BackupTask>(`/tasks/${id}/retry`, { method: "POST" }),
+    saveTelegram: (payload: { api_id: number; api_hash?: string }) =>
+      request<{ configured: boolean; authorized: boolean }>("/settings/telegram", {
+        method: "PUT",
+        body: JSON.stringify(payload)
+      }),
+    sendTelegramCode: (phone: string) =>
+      request<{ sent: boolean }>("/settings/telegram/send-code", {
+        method: "POST",
+        body: JSON.stringify({ phone })
+      }),
+    verifyTelegramCode: (code: string) =>
+      request<{ authorized: boolean; needs_password: boolean }>("/settings/telegram/verify-code", {
+        method: "POST",
+        body: JSON.stringify({ code })
+      }),
+    verifyTelegramPassword: (password: string) =>
+      request<{ authorized: boolean }>("/settings/telegram/verify-password", {
+        method: "POST",
+        body: JSON.stringify({ password })
+      }),
+    addGoogleDrive: (payload: {
+      name: string;
+      client_id: string;
+      client_secret: string;
+      token_json: string;
+      root_folder_id?: string;
+    }) =>
+      request<{ created: boolean; destination: string }>("/settings/storage/google-drive", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    testStorage: (destination?: string) =>
+      request<{ success: boolean; message: string }>("/settings/storage/test", {
+        method: "POST",
+        body: JSON.stringify({ destination: destination || null })
+      }),
+    setStorageDestination: (destination: string) =>
+      request<{ destination: string }>("/settings/storage/default", {
+        method: "PUT",
+        body: JSON.stringify({ destination })
+      }),
+    saveBackupSettings: (scan_interval_seconds: number) =>
+      request<{ scan_interval_seconds: number }>("/settings/backup", {
+        method: "PUT",
+        body: JSON.stringify({ scan_interval_seconds })
+      })
   };
 }
