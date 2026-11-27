@@ -1,0 +1,100 @@
+package api
+
+import(
+ "encoding/json"
+ "errors"
+ "io"
+ "net/http"
+ "strconv"
+ "strings"
+
+ "github.com/go-chi/chi/v5"
+ "github.com/hctty27/telegram-backup/internal/backup"
+ "github.com/hctty27/telegram-backup/internal/telegram"
+ "github.com/jackc/pgx/v5"
+ "github.com/jackc/pgx/v5/pgxpool"
+)
+
+type Actions struct{
+ Pool *pgxpool.Pool
+ Telegram *telegram.Service
+ Login *telegram.LoginManager
+ Engine *backup.Engine
+}
+func decode(w http.ResponseWriter,r *http.Request,v any)error{
+ r.Body=http.MaxBytesReader(w,r.Body,64<<10)
+ d:=json.NewDecoder(r.Body);d.DisallowUnknownFields()
+ if err:=d.Decode(v);err!=nil{return err}
+ var extra any
+ if err:=d.Decode(&extra);!errors.Is(err,io.EOF){return errors.New("invalid trailing JSON")}
+ return nil
+}
+func reply(w http.ResponseWriter,v any){w.Header().Set("Content-Type","application/json");_=json.NewEncoder(w).Encode(v)}
+func fail(w http.ResponseWriter){http.Error(w,"operation failed; check configuration and connection",400)}
+func idParam(r *http.Request)(int64,error){id,err:=strconv.ParseInt(chi.URLParam(r,"id"),10,64);if err!=nil||id<=0{return 0,errors.New("invalid ID")};return id,nil}
+
+func(a *Actions)Routes(r chi.Router){
+ r.Post("/accounts",func(w http.ResponseWriter,r *http.Request){
+  var req struct{APIID int `json:"api_id"`;APIHash string `json:"api_hash"`;Name string `json:"name"`}
+  if decode(w,r,&req)!=nil{fail(w);return}
+  id,err:=a.Telegram.CreateAccount(r.Context(),req.APIID,req.APIHash,req.Name);if err!=nil{fail(w);return}
+  reply(w,map[string]string{"id":strconv.FormatInt(id,10)})
+ })
+ r.Post("/accounts/{id}/qr",func(w http.ResponseWriter,r *http.Request){
+  id,err:=idParam(r);if err!=nil{fail(w);return}
+  var exists bool
+  if a.Pool.QueryRow(r.Context(),"SELECT EXISTS(SELECT 1 FROM telegram_accounts WHERE id=$1)",id).Scan(&exists)!=nil||!exists{fail(w);return}
+  if a.Login.Start(id)!=nil{http.Error(w,"login already active",409);return}
+  reply(w,a.Login.Status(id))
+ })
+ r.Get("/accounts/{id}/qr",func(w http.ResponseWriter,r *http.Request){
+  id,err:=idParam(r);if err!=nil{fail(w);return};reply(w,a.Login.Status(id))
+ })
+ r.Post("/accounts/{id}/password",func(w http.ResponseWriter,r *http.Request){
+  id,err:=idParam(r);var req struct{Password string `json:"password"`}
+  if err!=nil||decode(w,r,&req)!=nil||a.Login.Password(id,req.Password)!=nil{fail(w);return}
+  reply(w,a.Login.Status(id))
+ })
+ r.Post("/accounts/{id}/chats",func(w http.ResponseWriter,r *http.Request){
+  id,err:=idParam(r);if err!=nil{fail(w);return}
+  count,err:=a.Telegram.ImportChats(r.Context(),id);if err!=nil{fail(w);return}
+  reply(w,map[string]int{"imported":count})
+ })
+ r.Post("/storage",func(w http.ResponseWriter,r *http.Request){
+  var req struct{Name string `json:"name"`}
+  if decode(w,r,&req)!=nil||a.Engine.Cloud.TestRemote(r.Context(),req.Name)!=nil{fail(w);return}
+  // The operator-provisioned private rclone config is the source of truth.
+  // Never return OAuth tokens or accept arbitrary rclone flags or paths.
+  _,err:=a.Pool.Exec(r.Context(),`INSERT INTO storage_remotes(name,kind,config_ciphertext,enabled)
+  VALUES($1,'rclone',decode('','hex'),true) ON CONFLICT(name) DO UPDATE SET enabled=true`,req.Name)
+  if err!=nil{fail(w);return};reply(w,map[string]bool{"ok":true})
+ })
+ r.Put("/chats/{id}/policy",func(w http.ResponseWriter,r *http.Request){
+  id,err:=idParam(r)
+  var req struct{RemoteID string `json:"remote_id"`;Enabled bool `json:"enabled"`;Interval int `json:"scan_interval_seconds"`}
+  if err!=nil||decode(w,r,&req)!=nil||req.Interval<60||req.Interval>86400{fail(w);return}
+  remote,err:=strconv.ParseInt(req.RemoteID,10,64);if err!=nil||remote<=0{fail(w);return}
+  tx,err:=a.Pool.Begin(r.Context());if err!=nil{fail(w);return};defer tx.Rollback(r.Context())
+  var existing int64
+  err=tx.QueryRow(r.Context(),"SELECT remote_id FROM backup_policies WHERE chat_id=$1 FOR UPDATE",id).Scan(&existing)
+  if err!=nil&&!errors.Is(err,pgx.ErrNoRows){fail(w);return}
+  if existing!=0&&existing!=remote{http.Error(w,"destination is immutable for an existing backup policy",409);return}
+  tag,err:=tx.Exec(r.Context(),`INSERT INTO backup_policies(chat_id,remote_id,enabled,scan_interval_seconds)
+  SELECT c.id,s.id,$3,$4 FROM telegram_chats c JOIN telegram_accounts a ON a.id=c.account_id
+  CROSS JOIN storage_remotes s WHERE c.id=$1 AND s.id=$2 AND a.enabled AND s.enabled
+  ON CONFLICT(chat_id) DO UPDATE SET enabled=EXCLUDED.enabled,scan_interval_seconds=EXCLUDED.scan_interval_seconds`,id,remote,req.Enabled,req.Interval)
+  if err!=nil||tag.RowsAffected()!=1{fail(w);return}
+  if _,err=tx.Exec(r.Context(),"UPDATE telegram_chats SET enabled=$2 WHERE id=$1",id,req.Enabled);err!=nil{fail(w);return}
+  if _,err=tx.Exec(r.Context(),"INSERT INTO sync_checkpoints(chat_id) VALUES($1) ON CONFLICT(chat_id) DO UPDATE SET next_scan_at=now()",id);err!=nil{fail(w);return}
+  if tx.Commit(r.Context())!=nil{fail(w);return};reply(w,map[string]bool{"ok":true})
+ })
+ r.Post("/chats/{id}/sync",func(w http.ResponseWriter,r *http.Request){
+  id,err:=idParam(r);if err!=nil{fail(w);return}
+  tag,err:=a.Pool.Exec(r.Context(),`UPDATE sync_checkpoints s SET next_scan_at=now() FROM backup_policies p
+   WHERE s.chat_id=$1 AND p.chat_id=s.chat_id AND p.enabled`,id)
+  if err!=nil||tag.RowsAffected()!=1{fail(w);return};reply(w,map[string]bool{"ok":true})
+ })
+ r.Get("/capabilities",func(w http.ResponseWriter,r *http.Request){reply(w,map[string]any{"workers_enabled":true,"sync_mode":"polling","storage_config":"private rclone config"})})
+}
+// Keep secret-bearing input out of access logs.
+var _ = strings.TrimSpace
