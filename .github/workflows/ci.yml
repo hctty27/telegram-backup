@@ -160,7 +160,8 @@ jobs:
         working-directory: web
         run: npm audit --audit-level=high
   browser:
-    runs-on: ubuntu-latest
+    # Pin the OS supported by the locked Playwright version.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
