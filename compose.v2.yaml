@@ -32,6 +32,8 @@ services:
     environment:
       V2_DATABASE_URL: postgres://telegram_backup:${V2_DB_PASSWORD}@postgres:5432/telegram_backup_v2?sslmode=disable
       V2_ADMIN_TOKEN: ${V2_ADMIN_TOKEN:?set V2_ADMIN_TOKEN}
+      V2_ENCRYPTION_KEY: ${V2_ENCRYPTION_KEY:?set V2_ENCRYPTION_KEY}
+      V2_ENABLE_WORKERS: ${V2_ENABLE_WORKERS:-true}
     ports:
       - "127.0.0.1:8081:8081"
     depends_on:
