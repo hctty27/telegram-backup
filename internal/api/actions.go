@@ -121,5 +121,5 @@ func(a *Actions)Routes(r chi.Router){
   if _,err=a.Engine.Jobs.JobRetryTx(r.Context(),tx,jobID);err!=nil{fail(w);return}
   if tx.Commit(r.Context())!=nil{fail(w);return};reply(w,map[string]bool{"ok":true})
  })
- r.Get("/capabilities",func(w http.ResponseWriter,r *http.Request){reply(w,map[string]any{"workers_enabled":true,"sync_mode":"polling","storage_config":"encrypted Drive OAuth token"})})
+ r.Get("/capabilities",func(w http.ResponseWriter,r *http.Request){reply(w,map[string]any{"workers_enabled":true,"sync_mode":"realtime+polling","storage_config":"encrypted Drive OAuth token"})})
 }
