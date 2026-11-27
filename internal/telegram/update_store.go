@@ -57,11 +57,12 @@ func(s *UpdateStore)SetChannelAccessHash(ctx context.Context,u,c,h int64)error{
  ON CONFLICT(account_id,user_id,channel_id) DO UPDATE SET access_hash=EXCLUDED.access_hash`,s.AccountID,u,c,h);return err
 }
 func(s *UpdateStore)GetChannelAccessHash(ctx context.Context,u,c int64)(v int64,found bool,err error){
+ var hash *int64
  err=s.Pool.QueryRow(ctx,`SELECT coalesce(
  (SELECT access_hash FROM telegram_update_channels WHERE account_id=$1 AND user_id=$2 AND channel_id=$3),
  (SELECT access_hash FROM telegram_chats WHERE account_id=$1 AND peer_kind='channel' AND peer_id=$3))
- WHERE EXISTS(SELECT 1 FROM telegram_accounts WHERE id=$1 AND telegram_user_id=$2)`,s.AccountID,u,c).Scan(&v)
- if errors.Is(err,pgx.ErrNoRows){return 0,false,nil};return v,err==nil,err
+ WHERE EXISTS(SELECT 1 FROM telegram_accounts WHERE id=$1 AND telegram_user_id=$2)`,s.AccountID,u,c).Scan(&hash)
+ if errors.Is(err,pgx.ErrNoRows){return 0,false,nil};if err!=nil{return 0,false,err};if hash==nil{return 0,false,nil};return *hash,true,nil
 }
 func(s *UpdateStore)SetUserAccessHash(ctx context.Context,u,target,h int64)error{
  _,err:=s.Pool.Exec(ctx,`INSERT INTO telegram_update_users(account_id,user_id,target_user_id,access_hash) VALUES($1,$2,$3,$4)
