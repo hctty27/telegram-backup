@@ -14,7 +14,7 @@ async function request<T>(token:string,path:string,method="GET",body?:unknown):P
  return r.json()
 }
 export function useCapabilities(token:string){
- return useQuery({queryKey:["capabilities"],queryFn:()=>request<{workers_enabled:boolean}>(token,"capabilities"),retry:false})
+ return useQuery({queryKey:["capabilities"],queryFn:()=>request<{workers_enabled:boolean;google_oauth?:boolean}>(token,"capabilities"),retry:false})
 }
 
 export function AdminControls({page,token,rows}:{page:string;token:string;rows:Row[]}){
@@ -60,10 +60,11 @@ function Accounts({token,rows}:{token:string;rows:Row[]}){
  </div>}{a.message}</Card>
 }
 function Storage({token,rows}:{token:string;rows:Row[]}){
- const [name,setName]=useState(""),[clientID,setClientID]=useState(""),[secret,setSecret]=useState(""),[oauth,setOAuth]=useState(""),[folder,setFolder]=useState(""),[selected,setSelected]=useState(""),a=useAction()
+ const caps=useCapabilities(token)
+ const [authorizeURL,setAuthorizeURL]=useState(""),[name,setName]=useState(""),[clientID,setClientID]=useState(""),[secret,setSecret]=useState(""),[oauth,setOAuth]=useState(""),[folder,setFolder]=useState(""),[selected,setSelected]=useState(""),a=useAction()
  return <Card className="space-y-4 p-5">
  <h2 className="font-medium">添加 Google Drive</h2>
- <p className="text-sm text-muted-foreground">使用自己的 Google OAuth 桌面客户端。在有浏览器的电脑通过 rclone authorize drive 获取授权 Token，再填写下方信息。凭据在数据库内加密保存。</p>
+ <p className="text-sm text-muted-foreground">支持 Web OAuth 客户端授权，也可导入桌面 rclone 授权 Token。凭据在数据库内加密保存。</p>
  <a href="https://rclone.org/drive/#making-your-own-client-id" target="_blank" rel="noreferrer" className="text-sm text-primary">查看官方 OAuth 配置指南</a>
  <form className="grid gap-3 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();void a.run(async()=>{
   await request(token,"storage","POST",{name,client_id:clientID,client_secret:secret,token:oauth,root_folder_id:folder});setSecret("");setOAuth("");setName("");setClientID("");setFolder("");return "连接测试通过，Google Drive 已加密保存"
@@ -72,9 +73,9 @@ function Storage({token,rows}:{token:string;rows:Row[]}){
  <label className="grid gap-1 text-sm">根文件夹 ID（可选）<input className={control} value={folder} onChange={e=>setFolder(e.target.value)} maxLength={256}/></label>
  <label className="grid gap-1 text-sm sm:col-span-2">OAuth Client ID<input className={control} value={clientID} onChange={e=>setClientID(e.target.value)} required maxLength={256}/></label>
  <label className="grid gap-1 text-sm sm:col-span-2">OAuth Client Secret<input className={control} type="password" autoComplete="off" value={secret} onChange={e=>setSecret(e.target.value)} required maxLength={256}/></label>
- <label className="grid gap-1 text-sm sm:col-span-2">rclone OAuth Token JSON<textarea className={control+" min-h-28 font-mono"} autoComplete="off" spellCheck={false} value={oauth} onChange={e=>setOAuth(e.target.value)} required maxLength={32768}/></label>
- <button className={primary} disabled={a.busy}>测试并保存</button>
- </form>
+ <label className="grid gap-1 text-sm sm:col-span-2">rclone OAuth Token JSON<textarea className={control+" min-h-28 font-mono"} autoComplete="off" spellCheck={false} value={oauth} onChange={e=>setOAuth(e.target.value)} maxLength={32768}/></label>
+ <div className="flex flex-wrap gap-2 sm:col-span-2"><button className={primary} disabled={a.busy||!oauth}>导入 Token 并保存</button>{caps.data?.google_oauth&&<button type="button" className={button} disabled={a.busy||!name||!clientID||!secret} onClick={()=>void a.run(async()=>{setAuthorizeURL("");const d=await request<{url:string}>(token,"storage/oauth/start","POST",{name,client_id:clientID,client_secret:secret,token:"",root_folder_id:folder});setAuthorizeURL(d.url);setSecret("");return "授权链接已生成，请打开链接完成 Google 授权"})}>生成 Google 授权链接</button>}</div>
+ </form>{authorizeURL&&<div className="space-y-2 text-sm"><a href={authorizeURL} target="_blank" rel="noreferrer" className="text-primary underline">前往 Google 官方授权页面</a><p className="text-muted-foreground">完成授权后返回此页面，点击顶部刷新按钮查看已添加的远端。授权链接十分钟内有效。</p></div>}
  <div className="flex flex-wrap gap-2 border-t border-border pt-4"><select className={control} value={selected} onChange={e=>setSelected(e.target.value)} aria-label="选择云存储"><option value="">选择已配置的远端</option>{rows.map(r=><option key={String(r.id)} value={String(r.id)}>{String(r.name)}</option>)}</select><button className={button} disabled={!selected||a.busy} onClick={()=>void a.run(async()=>{await request(token,"storage/"+selected+"/test","POST");return "连接测试通过"})}>测试连接</button></div>{a.message}</Card>
 }
 function Chats({token,rows}:{token:string;rows:Row[]}){
