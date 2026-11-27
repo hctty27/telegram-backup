@@ -10,12 +10,12 @@ Linux Docker Engine + Docker Compose v2。单应用实例，数据库不对外�
 
 ```sh
 umask 077
-printf 'V2_DB_PASSWORD=%s\nV2_ADMIN_TOKEN=%s\nV2_ENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > .env
+(set -C; printf 'V2_DB_PASSWORD=%s\nV2_ADMIN_TOKEN=%s\nV2_ENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > .env)
 docker compose up -d --build
 docker compose ps
 ```
 
-默认宿主机监听 127.0.0.1:8081。通过 SSH 隧道或可信 HTTPS 反向代理访问；不要直接公开 HTTP。使用 .env 中的管理令牌登录。保留并安全备份数据库、加密密钥和应用卷；不要运行 `docker compose down -v` 清理生产环境。
+密钥初始化命令仅适用于首次安装；若 .env 已存在，不要覆盖，应保留原密钥。默认宿主机监听 127.0.0.1:8081。通过 SSH 隧道或可信 HTTPS 反向代理访问；不要直接公开 HTTP。使用 .env 中的管理令牌登录。保留并安全备份数据库、加密密钥和应用卷；不要运行 `docker compose down -v` 清理生产环境。
 
 1. 添加 Telegram API ID / Hash，扫码并完成可选的 2FA。
 2. 配置 Google Drive。支持桌面 OAuth Token 导入；直接网页授权需自己的 Web OAuth Client、Drive API 和精确的 HTTPS 回调 `V2_GOOGLE_REDIRECT_URI`。
@@ -30,7 +30,7 @@ docker compose ps
 - [安装、限制和验证状态](docs/V2-STATUS.md)
 - [Telegram 独立联调工具](docs/V2-PROBE.md)
 
-Go 1.27.4 / Node 22；CI 执行前端构建、Go build/vet/race、数据库迁移、模拟备份集成、Docker 和全新 Compose 启动检查。依赖锁文件已入库；安全修复版本正在重新生成锁文件并等待 CI，最终真实服务验收尚未完成。
+Go 1.27.4 / Node 22；CI 执行前端构建、Go build/vet/race、数据库迁移、模拟备份集成、Docker 和全新 Compose 启动检查。依赖锁文件已入库并包含最新针对性安全修复；最终 CI、安全扫描及真实服务验收仍待确认。
 
 ```sh
 (cd web && npm ci && npm run build)
@@ -40,3 +40,7 @@ go build ./...
 go vet ./...
 go test -race ./...
 ```
+
+### 更新依赖
+
+更新 Go 依赖后执行 `go mod tidy`，更新前端依赖后在 `web` 中执行 `npm install --package-lock-only --ignore-scripts`。将依赖声明与对应锁文件放入同一个 PR，复核后再运行完整 CI。依赖锁生成工作流仅提供只读构建产物，不再自动写入分支。不要为了通过测试关闭漏洞扫描或手工伪造校验值。

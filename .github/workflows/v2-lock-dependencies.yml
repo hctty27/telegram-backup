@@ -1,8 +1,5 @@
-name: V2 lock dependencies
+name: Resolve dependency locks (read-only)
 on:
-  push:
-    branches: [v2-rewrite]
-    paths: ['.github/workflows/v2-lock-dependencies.yml', 'go.mod', 'web/package.json']
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,7 +8,6 @@ concurrency:
   cancel-in-progress: false
 jobs:
   resolve:
-    if: github.ref == 'refs/heads/v2-rewrite'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -39,37 +35,3 @@ jobs:
             web/package-lock.json
           if-no-files-found: error
           retention-days: 7
-  commit:
-    if: github.ref == 'refs/heads/v2-rewrite'
-    needs: resolve
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-      - uses: actions/download-artifact@v4
-        with:
-          name: resolved-v2-locks
-          path: .locks
-      - name: Commit only generated dependency files if branch has not advanced
-        env:
-          EXPECTED_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
-          git fetch origin refs/heads/v2-rewrite
-          test "$(git rev-parse FETCH_HEAD)" = "$EXPECTED_SHA"
-          for file in go.mod go.sum web/package-lock.json; do
-            test -f ".locks/$file"
-            test ! -L ".locks/$file"
-            cp ".locks/$file" "$file"
-          done
-          git add -- go.mod go.sum web/package-lock.json
-          if git diff --cached --quiet; then exit 0; fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "build: lock V2 Go and npm dependencies"
-          git push origin HEAD:refs/heads/v2-rewrite
