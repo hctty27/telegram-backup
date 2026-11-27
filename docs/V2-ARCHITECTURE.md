@@ -4,7 +4,7 @@ Status: accepted direction; implementation and end-to-end verification pending.
 
 ## 1. Scope and stack
 
-Build a self-hosted, single-process modular Go application. Go 1.27.4, net/http + chi v5, gotd/td, PostgreSQL 18, pgx/v5, sqlc, Goose, open-source River (no Pro dependency), slog, OpenAPI, SSE. React 19, TypeScript, Vite, shadcn/ui, Tailwind CSS 4, TanStack Router/Query/Table and Lucide. Pin tested dependency versions and lockfiles. Use rclone CLI behind a Storage interface; no Redis, Kafka or Node runtime in production. Embed built SPA with Go embed. Docker Compose application + PostgreSQL, persistent private volumes. Keep main and V1 deployment unchanged until cutover.
+Build a self-hosted, single-process modular Go application. Go 1.27.4, net/http + chi v5, gotd/td, PostgreSQL 18, pgx/v5, sqlc, Goose, open-source River (no Pro dependency), slog, OpenAPI, SSE. React 19, TypeScript, Vite, shadcn/ui, Tailwind CSS 4, TanStack Router/Query/Table and Lucide. Pin tested dependency versions and lockfiles. Use rclone CLI behind a Storage interface; no Redis, Kafka or Node runtime in production. Embed built SPA with Go embed. Docker Compose application + PostgreSQL, persistent private volumes. V2 is a clean install; no legacy migration or compatibility layer.
 
 ## 2. Components and ownership
 
@@ -38,13 +38,9 @@ Defaults (configurable): 2 download slots, 2 upload slots, 10 GiB staging quota,
 
 Routes: overview, accounts, chats, tasks, transfers, archive, remotes, policies, logs, settings. UI style: restrained Vercel/Linear-inspired layout, collapsible sidebar, neutral zinc palette, blue accent, 8–12 px radius, clear dense tables, light/dark/system themes, responsive mobile layout, skeletons/toasts. Show real data and empty/error states, no fake metrics. SSE authenticated via secure same-origin session cookies, event IDs/reconnect plus snapshot fallback; never place credentials in URL. Admin authentication, CSRF protection for cookie-auth mutations, HTTPS via reverse proxy, least privilege, non-root runtime, no default credentials, redact logs. API and background workers share application services, not Telegram session files across processes.
 
-## 7. V1 migration and deployment
+## 7. Fresh deployment only
 
-1. Inventory V1 SQLite, APP_ENCRYPTION_KEY, Telethon .session, encrypted rclone config, chat checkpoints, media records and local files; create consistent protected backups.
-2. Validate gotd QR + 2FA + history + small and large media on a dedicated chat before migrating. Telethon SQLite session is not directly interchangeable; prefer fresh QR authorization or separately validated offline conversion. Do not run old and new jobs on same live session or staging directory.
-3. Build an idempotent dry-run importer for V1 settings/chats/checkpoints/media, preserving uploaded remote paths, original message IDs and record counts. Decrypt legacy secrets only locally and re-encrypt with versioned authenticated encryption; no secrets in Git or CLI output. Validate account identity and peer mapping.
-4. During maintenance, stop V1 worker and capture final consistent state; import, reconcile local and remote artifacts, run verification on a dedicated chat, then enable V2. Keep original database and data unchanged for rollback. After V2 writes, rollback requires reconciliation of new uploads/checkpoints; never blindly resume V1.
-5. No destructive V1 schema migration. New V2 Compose project, ports, volume names and staging directory during testing. Expose one app port; PostgreSQL internal only.
+V2 starts with a new PostgreSQL database, a fresh Telegram authorization, independent rclone configuration and a private staging directory. There is no SQLite importer, Telethon session conversion, or compatibility requirement. Run one application instance. Generate independent database, admin and encryption secrets. Verify the entire backup workflow on a dedicated authorized chat before enabling large archives.
 
 ## 8. Delivery gates
 
@@ -53,8 +49,8 @@ Phase 1: compile and test Go scaffold, gotd login/history/download spike (real t
 Phase 2: PostgreSQL migrations, sqlc, River jobs and durable checkpoints; transaction rollback and duplicate enqueue tests.
 Phase 3: full backup pipeline, bounded concurrency, restart and disk safety, rate-limit and remote verification tests.
 Phase 4: dashboard rewrite, OpenAPI + generated API types, SSE, mobile and dark theme tests.
-Phase 5: import dry-run, reconciliation and deployment documentation, end-to-end tests with authorized Telegram account and Drive. CI runs formatting, lint, go test -race, frontend typecheck/build, PostgreSQL integration and container build. Test crash at every stage, disk exhaustion, network failure, failed deletion, auth expiration, expired file reference, concurrent discovery and duplicate cloud names.
-Phase 6: release candidate and explicit cutover approval; no merge or production deployment before verification.
+Phase 5: fresh-install documentation, reconciliation, and end-to-end tests with authorized Telegram account and Drive. CI runs formatting, lint, go test -race, frontend typecheck/build, PostgreSQL integration and container build. Test crash at every stage, disk exhaustion, network failure, failed deletion, auth expiration, expired file reference, concurrent discovery and duplicate cloud names.
+Phase 6: release candidate and explicit cutover approval; no release before verification.
 
 ## References
 
