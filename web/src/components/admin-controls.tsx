@@ -21,7 +21,7 @@ export function AdminControls({page,token,rows}:{page:string;token:string;rows:R
  const caps=useCapabilities(token)
  if(!caps.data?.workers_enabled)return null
  if(page==="accounts")return <Accounts token={token} rows={rows}/>
- if(page==="storage")return <Storage token={token}/>
+ if(page==="storage")return <Storage token={token} rows={rows}/>
  if(page==="chats")return <Chats token={token} rows={rows}/>
  if(page==="tasks")return <Tasks token={token} rows={rows}/>
  return null
@@ -59,9 +59,23 @@ function Accounts({token,rows}:{token:string;rows:Row[]}){
  {status?.state==="failed"&&<p className="text-sm text-red-500">授权失败，请重新发起扫码。</p>}
  </div>}{a.message}</Card>
 }
-function Storage({token}:{token:string}){
- const [name,setName]=useState(""),a=useAction()
- return <Card className="space-y-3 p-5"><h2 className="font-medium">添加已配置的云存储</h2><p className="text-sm text-muted-foreground">先在应用容器中通过 rclone 配置 Google Drive 等远端，再填写远端名称。连接测试通过后才会注册。</p><form className="flex flex-wrap gap-2" onSubmit={e=>{e.preventDefault();void a.run(async()=>{await request(token,"storage","POST",{name});setName("");return "连接测试通过，云存储已注册"})}}><input aria-label="rclone 远端名称" className={control} value={name} onChange={e=>setName(e.target.value)} placeholder="例如 drive" required pattern="[A-Za-z0-9][A-Za-z0-9_.-]{0,63}"/><button className={primary} disabled={a.busy}>测试并添加</button></form>{a.message}</Card>
+function Storage({token,rows}:{token:string;rows:Row[]}){
+ const [name,setName]=useState(""),[clientID,setClientID]=useState(""),[secret,setSecret]=useState(""),[oauth,setOAuth]=useState(""),[folder,setFolder]=useState(""),[selected,setSelected]=useState(""),a=useAction()
+ return <Card className="space-y-4 p-5">
+ <h2 className="font-medium">添加 Google Drive</h2>
+ <p className="text-sm text-muted-foreground">使用自己的 Google OAuth 桌面客户端。在有浏览器的电脑通过 rclone authorize drive 获取授权 Token，再填写下方信息。凭据在数据库内加密保存。</p>
+ <a href="https://rclone.org/drive/#making-your-own-client-id" target="_blank" rel="noreferrer" className="text-sm text-primary">查看官方 OAuth 配置指南</a>
+ <form className="grid gap-3 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();void a.run(async()=>{
+  await request(token,"storage","POST",{name,client_id:clientID,client_secret:secret,token:oauth,root_folder_id:folder});setSecret("");setOAuth("");setName("");setClientID("");setFolder("");return "连接测试通过，Google Drive 已加密保存"
+ })}}>
+ <label className="grid gap-1 text-sm">远端名称<input className={control} value={name} onChange={e=>setName(e.target.value)} required pattern="[A-Za-z0-9][A-Za-z0-9_.-]{0,63}" placeholder="drive"/></label>
+ <label className="grid gap-1 text-sm">根文件夹 ID（可选）<input className={control} value={folder} onChange={e=>setFolder(e.target.value)} maxLength={256}/></label>
+ <label className="grid gap-1 text-sm sm:col-span-2">OAuth Client ID<input className={control} value={clientID} onChange={e=>setClientID(e.target.value)} required maxLength={256}/></label>
+ <label className="grid gap-1 text-sm sm:col-span-2">OAuth Client Secret<input className={control} type="password" autoComplete="off" value={secret} onChange={e=>setSecret(e.target.value)} required maxLength={256}/></label>
+ <label className="grid gap-1 text-sm sm:col-span-2">rclone OAuth Token JSON<textarea className={control+" min-h-28 font-mono"} autoComplete="off" spellCheck={false} value={oauth} onChange={e=>setOAuth(e.target.value)} required maxLength={32768}/></label>
+ <button className={primary} disabled={a.busy}>测试并保存</button>
+ </form>
+ <div className="flex flex-wrap gap-2 border-t border-border pt-4"><select className={control} value={selected} onChange={e=>setSelected(e.target.value)} aria-label="选择云存储"><option value="">选择已配置的远端</option>{rows.map(r=><option key={String(r.id)} value={String(r.id)}>{String(r.name)}</option>)}</select><button className={button} disabled={!selected||a.busy} onClick={()=>void a.run(async()=>{await request(token,"storage/"+selected+"/test","POST");return "连接测试通过"})}>测试连接</button></div>{a.message}</Card>
 }
 function Chats({token,rows}:{token:string;rows:Row[]}){
  const [chat,setChat]=useState(""),[remote,setRemote]=useState(""),[interval,setInterval]=useState(300),[enabled,setEnabled]=useState(true),a=useAction()
