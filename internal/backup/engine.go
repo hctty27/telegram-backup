@@ -11,6 +11,7 @@ import(
  "strings"
  "time"
 
+ "github.com/gotd/td/tg"
  "github.com/hctty27/telegram-backup/internal/disk"
  "github.com/hctty27/telegram-backup/internal/queue"
  "github.com/hctty27/telegram-backup/internal/storage"
@@ -21,10 +22,19 @@ import(
  "github.com/riverqueue/river"
 )
 
+type TelegramSource interface{
+ ReadPage(context.Context,int64,tg.InputPeerClass,int,int)(tgservice.Page,error)
+ Fetch(context.Context,int64,tg.InputPeerClass,int,string,int64,io.Writer)error
+}
+type CloudStore interface{
+ UploadVerified(context.Context,string,string,string)(storage.Verified,error)
+ TestRemote(context.Context,string)error
+}
+
 type Engine struct{
  Pool *pgxpool.Pool
- Telegram *tgservice.Service
- Cloud *storage.Rclone
+ Telegram TelegramSource
+ Cloud CloudStore
  Quota *disk.Manager
  Root string
  MaxFile int64
