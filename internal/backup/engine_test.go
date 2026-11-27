@@ -11,6 +11,7 @@ import(
  "time"
 
  "github.com/gotd/td/tg"
+ "github.com/gotd/td/telegram/updates"
  "github.com/hctty27/telegram-backup/internal/disk"
  "github.com/hctty27/telegram-backup/internal/queue"
  "github.com/hctty27/telegram-backup/internal/storage"
@@ -49,6 +50,17 @@ func TestDurablePipeline(t *testing.T){
  jobs,err:=queue.New(pool,e.Handlers());if err!=nil{t.Fatal(err)};e.Jobs=jobs
  var account,chat,remote,media,replica int64
  if err=pool.QueryRow(ctx,"INSERT INTO telegram_accounts(api_id,api_hash_ciphertext,enabled) VALUES(123,decode('','hex'),true) RETURNING id").Scan(&account);err!=nil{t.Fatal(err)}
+ store:=&tgservice.UpdateStore{Pool:pool,AccountID:account}
+ if _,found,err:=store.GetState(ctx,123);err!=nil||found{t.Fatalf("unexpected stored state %v %v",found,err)}
+ if err=store.SetState(ctx,123,updates.State{Pts:1,Qts:2,Date:3,Seq:4});err!=nil{t.Fatal(err)}
+ if err=store.SetPts(ctx,123,9);err!=nil{t.Fatal(err)}
+ if err=store.SetDateSeq(ctx,123,5,6);err!=nil{t.Fatal(err)}
+ if v,found,err:=store.GetState(ctx,123);err!=nil||!found||v.Pts!=9||v.Qts!=2||v.Date!=5||v.Seq!=6{t.Fatalf("state=%+v found=%v err=%v",v,found,err)}
+ if err=store.SetChannelPts(ctx,123,100,42);err!=nil{t.Fatal(err)}
+ if err=store.SetChannelAccessHash(ctx,123,100,456);err!=nil{t.Fatal(err)}
+ if err=store.ForEachChannels(ctx,123,func(ctx context.Context,id int64,pts int)error{if id!=100||pts!=42{t.Fatal("wrong channel state")};return nil});err!=nil{t.Fatal(err)}
+ if err=store.SetUserAccessHash(ctx,123,200,789);err!=nil{t.Fatal(err)}
+ if h,found,err:=store.GetUserAccessHash(ctx,123,200);err!=nil||!found||h!=789{t.Fatalf("user hash=%d found=%v err=%v",h,found,err)}
  if err=pool.QueryRow(ctx,"INSERT INTO telegram_chats(account_id,peer_kind,peer_id,title,enabled) VALUES($1,'chat',100,'test',true) RETURNING id",account).Scan(&chat);err!=nil{t.Fatal(err)}
  name:="integration-"+time.Now().Format("20060102150405.000000000")
  if err=pool.QueryRow(ctx,"INSERT INTO storage_remotes(name,kind,config_ciphertext,enabled) VALUES($1,'test',decode('','hex'),true) RETURNING id",name).Scan(&remote);err!=nil{t.Fatal(err)}
