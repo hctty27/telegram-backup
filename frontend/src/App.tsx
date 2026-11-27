@@ -34,6 +34,7 @@ import {
 } from "@ant-design/icons";
 import { createApi } from "./api";
 import SettingsPage from "./SettingsPage";
+import { ArchivePage, MonitorPanel } from "./OperationsPage";
 import type { AppSettings, BackupTask, Chat, DashboardStats } from "./types";
 
 const { Header, Sider, Content } = Layout;
@@ -144,6 +145,7 @@ export default function App() {
     setToken("");
     setAuthenticated(false);
     setStats(null);
+    setPage("overview");
     setChats([]);
     setTasks([]);
   };
@@ -245,6 +247,8 @@ export default function App() {
     { key: "overview", icon: <DashboardOutlined />, label: "总览" },
     { key: "chats", icon: <FolderOpenOutlined />, label: "群组管理" },
     { key: "tasks", icon: <ThunderboltOutlined />, label: "备份任务" },
+    { key: "archive", icon: <FolderOpenOutlined />, label: "文件归档" },
+    { key: "monitor", icon: <DashboardOutlined />, label: "运行日志" },
     { key: "settings", icon: <SettingOutlined />, label: "系统设置" }
   ];
 
@@ -286,6 +290,7 @@ export default function App() {
           </Space>
         </Header>
 
+        <div className="mobile-nav"><Menu mode="horizontal" selectedKeys={[page]} items={menuItems} onClick={({key})=>setPage(key)} /></div>
         <Content className="page-content">
           {loading && !stats ? <div className="page-loading"><Progress percent={60} status="active" showInfo={false} /></div> : null}
 
@@ -316,6 +321,7 @@ export default function App() {
                   description="请进入「系统设置 → 云存储」，添加 Google Drive 或选择已有 rclone Remote，并测试连接。"
                 />
               )}
+              <MonitorPanel api={api}/>
               <Row gutter={[16, 16]}>
                 <Col xs={24} sm={12} xl={6}><Card className="metric-card"><Statistic title="已导入群组" value={stats?.total_chats || 0} suffix="个" /></Card></Col>
                 <Col xs={24} sm={12} xl={6}><Card className="metric-card"><Statistic title="自动备份中" value={stats?.enabled_chats || 0} suffix="个" /></Card></Col>
@@ -325,7 +331,7 @@ export default function App() {
               <Row gutter={[16, 16]}>
                 <Col xs={24} lg={8}><Card title="任务队列" className="panel-card"><div className="queue-stats"><div><Text type="secondary">排队中</Text><Title level={2}>{stats?.queued_tasks || 0}</Title></div><div><Text type="secondary">运行中</Text><Title level={2} className="accent-number">{stats?.running_tasks || 0}</Title></div><div><Text type="secondary">失败</Text><Title level={2} className="danger-number">{stats?.failed_tasks || 0}</Title></div></div></Card></Col>
                 <Col xs={24} lg={16}><Card title="最近任务" extra={<Button type="link" onClick={() => setPage("tasks")}>查看全部</Button>} className="panel-card">
-                  {tasks.length ? <Table rowKey="id" size="small" pagination={false} dataSource={tasks.slice(0, 5)} columns={taskColumns.slice(0, 7)} /> : <Empty description="还没有备份任务" />}
+                  {tasks.length ? <Table rowKey="id" size="small" pagination={false} dataSource={tasks.slice(0, 5)} scroll={{x:600}} columns={taskColumns.slice(0, 7)} /> : <Empty description="还没有备份任务" />}
                 </Card></Col>
               </Row>
             </Space>
@@ -336,17 +342,19 @@ export default function App() {
               <Button type="primary" icon={<SyncOutlined />} loading={working} onClick={() => void runAction(() => api.syncChats(), "群组同步完成")}>从 Telegram 同步</Button>
             }>
               <Paragraph type="secondary">选择需要归档的群组。开启自动备份后，后台会按设定间隔扫描新消息。</Paragraph>
-              <Table rowKey="id" dataSource={chats} columns={chatColumns} loading={loading} pagination={{ pageSize: 10, showSizeChanger: false }} locale={{ emptyText: <Empty description="尚无群组，请先同步 Telegram" /> }} />
+              <Table rowKey="id" dataSource={chats} scroll={{x:650}} columns={chatColumns} loading={loading} pagination={{ pageSize: 10, showSizeChanger: false }} locale={{ emptyText: <Empty description="尚无群组，请先同步 Telegram" /> }} />
             </Card>
           )}
 
           {page === "tasks" && (
             <Card className="panel-card" title="备份任务">
               <Paragraph type="secondary">查看备份执行状态、扫描数量和上传结果。失败任务可以重新执行。</Paragraph>
-              <Table rowKey="id" dataSource={tasks} columns={taskColumns} loading={loading} pagination={{ pageSize: 10, showSizeChanger: false }} locale={{ emptyText: <Empty description="暂无任务" /> }} />
+              <Table rowKey="id" dataSource={tasks} scroll={{x:900}} columns={taskColumns} loading={loading} pagination={{ pageSize: 10, showSizeChanger: false }} locale={{ emptyText: <Empty description="暂无任务" /> }} />
             </Card>
           )}
 
+          {page === "archive" && <ArchivePage api={api} chats={chats}/>}
+          {page === "monitor" && <MonitorPanel api={api} logs/>}
           {page === "settings" && <SettingsPage api={api} onRefresh={loadData} />}
 
         </Content>

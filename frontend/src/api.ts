@@ -19,6 +19,8 @@ export function createApi(token: string) {
   }
 
   return {
+    monitor: () => request<import("./OperationsPage").MonitorData>("/monitor"),
+    archive: (params: URLSearchParams) => request<import("./OperationsPage").ArchiveData>("/archive?" + params.toString()),
     dashboard: () => request<DashboardStats>("/dashboard"),
     chats: () => request<Chat[]>("/chats"),
     tasks: () => request<BackupTask[]>("/tasks"),

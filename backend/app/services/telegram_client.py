@@ -160,10 +160,10 @@ class TelegramService:
         ):
             yield message
 
-    async def download_media(self, message: Any, target: Path) -> Path | None:
+    async def download_media(self, message: Any, target: Path, progress_callback=None) -> Path | None:
         if not self.connected or self.client is None:
             raise RuntimeError("Telegram account is not authorized")
 
         target.parent.mkdir(parents=True, exist_ok=True)
-        result = await self.client.download_media(message, file=str(target))
+        result = await self.client.download_media(message, file=str(target), progress_callback=progress_callback)
         return Path(result) if result else None

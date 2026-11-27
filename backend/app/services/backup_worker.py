@@ -10,6 +10,7 @@ from app.config import settings
 from app.config_store import get_config_value
 from app.database import SessionLocal
 from app.models import BackupTask, Chat, MediaFile
+from app.monitor import monitor
 from app.services.storage import RcloneStorage
 from app.services.telegram_client import TelegramService
 
@@ -135,6 +136,7 @@ class BackupWorker:
                 if not self.telegram.connected:
                     raise RuntimeError("Telegram account is not authorized.")
 
+                monitor.event(task_id, "task_started")
                 destination_root = await self.storage.get_destination()
                 async for message in self.telegram.iter_messages(
                     chat.telegram_id,
@@ -193,9 +195,9 @@ class BackupWorker:
                         else None
                     )
                     if local_path is None:
+                        monitor.begin(task_id, filename, "downloading", file_size)
                         local_path = await self.telegram.download_media(
-                            message,
-                            local_target,
+                            message, local_target, progress_callback=monitor.update,
                         )
                     if local_path is None:
                         raise RuntimeError(
@@ -203,6 +205,7 @@ class BackupWorker:
                         )
 
                     media.local_path = str(local_path)
+                    media.file_size = local_path.stat().st_size
                     media.status = "uploading"
                     await db.commit()
 
@@ -213,7 +216,8 @@ class BackupWorker:
                         f"{message_date:%Y/%m}/"
                         f"{message.id}-{filename}"
                     )
-                    await self.storage.upload(local_path, remote_path)
+                    monitor.begin(task_id, filename, "uploading", media.file_size)
+                    await self.storage.upload(local_path, remote_path, progress_callback=monitor.update)
 
                     media.remote_path = remote_path
                     media.local_path = None
@@ -225,6 +229,7 @@ class BackupWorker:
                     chat.last_message_id = max(chat.last_message_id, message.id)
                     await db.commit()
 
+                    monitor.finish(task_id, "file_uploaded")
                     try:
                         local_path.unlink(missing_ok=True)
                     except OSError:
@@ -235,11 +240,13 @@ class BackupWorker:
                 task.error = None
                 chat.last_synced_at = datetime.utcnow()
                 await db.commit()
+                monitor.finish(task_id, "task_completed")
                 logger.info("Backup task %s completed for chat %s", task_id, chat.title)
 
             except Exception as exc:
+                monitor.finish(task_id, "task_failed")
                 logger.exception("Backup task %s failed", task_id)
                 task.status = "failed"
-                task.error = str(exc)[:4000]
+                task.error = type(exc).__name__ + ": backup failed; see protected server logs."
                 task.finished_at = datetime.utcnow()
                 await db.commit()

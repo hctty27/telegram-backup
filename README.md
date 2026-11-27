@@ -55,3 +55,7 @@ Frontend: run `npm install` and `npm run dev` from `frontend/`.
 ## Project status
 
 The dashboard supports Telegram API configuration and phone-code / 2FA login, Google Drive remote creation from OAuth token JSON, existing rclone remote import, storage connection testing, default destination selection, and persistent backup scan interval settings. Run an end-to-end test with a dedicated Telegram chat before enabling large archives.
+
+## Operations dashboard
+
+The archive page queries successfully uploaded database records, with pagination, filename search, chat/type filters and copyable remote paths. It is an index, not a live cloud file browser. The monitor displays the current file's transfer progress using Telethon callbacks and rclone JSON statistics, plus the most recent 200 structured events in memory. Events reset on restart; task history remains in SQLite. Media streaming, file deletion, QR login and quota visualization are not part of this iteration.

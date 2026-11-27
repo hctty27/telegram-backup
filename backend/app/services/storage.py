@@ -255,14 +255,14 @@ class RcloneStorage:
             raise RuntimeError("Cloud storage connection test failed. Check the remote authorization and destination path.")
         await self._persist_config_text(updated_config)
 
-    async def upload(self, source: Path, destination: str) -> None:
+    async def upload(self, source: Path, destination: str, progress_callback=None) -> None:
         if not source.is_file():
             raise FileNotFoundError(f"Local media file does not exist: {source}")
         config_text = await self._read_config_text()
         if not config_text.strip():
             raise RuntimeError("No rclone configuration found. Add a cloud storage remote in Settings.")
         with self._temporary_config(config_text) as config_path:
-            code, detail = await self._run_rclone(
+            code = await self._upload_with_stats(
                 [
                     "--config",
                     str(config_path),
@@ -275,10 +275,40 @@ class RcloneStorage:
                     "10s",
                     "--low-level-retries",
                     "10",
+                    "--use-json-log", "--stats", "1s", "--stats-log-level", "NOTICE",
                 ],
-                timeout=3600,
+                progress_callback,
             )
             updated_config = config_path.read_text(encoding="utf-8")
         if code != 0:
-            raise RuntimeError(f"rclone upload failed: {detail[-2000:]}")
+            raise RuntimeError(f"rclone upload failed (exit {code})")
         await self._persist_config_text(updated_config)
+
+    async def _upload_with_stats(self, args, callback=None):
+        process = await asyncio.create_subprocess_exec(
+            "rclone", *args, env=await self._rclone_environment(),
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
+        )
+
+        async def consume():
+            assert process.stderr is not None
+            async for line in process.stderr:
+                if callback is None:
+                    continue
+                try:
+                    stats = json.loads(line).get("stats")
+                    if stats:
+                        callback(stats.get("bytes", 0), stats.get("totalBytes", 0), stats.get("speed", 0))
+                except (ValueError, TypeError, AttributeError, OverflowError):
+                    continue
+            return await process.wait()
+
+        try:
+            return await asyncio.wait_for(consume(), timeout=3600)
+        finally:
+            if process.returncode is None:
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+                await process.wait()

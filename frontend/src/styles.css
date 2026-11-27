@@ -51,3 +51,7 @@ body { margin: 0; min-width: 320px; background: #10151f; }
   .page-heading { align-items: flex-start; flex-direction: column; }
   .queue-stats { flex-wrap: wrap; }
 }
+
+.mobile-nav {display:none;min-width:0;}
+.app-shell > .ant-layout {min-width:0;}
+@media(max-width:991px){.mobile-nav{display:block;overflow:auto;}.mobile-nav .ant-menu{min-width:560px;}.page-content{min-width:0;}.app-sider .ant-layout-sider-zero-width-trigger{display:none;}}

@@ -312,3 +312,39 @@ async def update_backup_settings(
     )
     await db.commit()
     return {"scan_interval_seconds": payload.scan_interval_seconds}
+
+
+@router.get("/monitor")
+async def transfer_monitor():
+    from app.monitor import monitor
+    return monitor.snapshot()
+
+
+@router.get("/archive")
+async def archive_files(
+    q: str = Query(default="", max_length=200),
+    chat_id: int | None = None,
+    kind: str = Query(default="all", pattern="^(all|image|video|other)$"),
+    page: int = Query(default=1, ge=1, le=100000),
+    page_size: int = Query(default=30, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    filters = [MediaFile.status == "uploaded"]
+    if q:
+        filters.append(MediaFile.file_name.contains(q, autoescape=True))
+    if chat_id is not None:
+        filters.append(MediaFile.chat_id == chat_id)
+    if kind in ("image", "video"):
+        filters.append(MediaFile.mime_type.like(kind + "/%"))
+    elif kind == "other":
+        mime = func.coalesce(MediaFile.mime_type, "")
+        filters.extend([~mime.like("image/%"), ~mime.like("video/%")])
+    total = await db.scalar(select(func.count(MediaFile.id)).where(*filters)) or 0
+    rows = await db.execute(select(MediaFile, Chat.title).join(Chat, Chat.id == MediaFile.chat_id)
+        .where(*filters).order_by(MediaFile.id.desc()).offset((page - 1) * page_size).limit(page_size))
+    return {"total": total, "items": [
+        {"id": file.id, "chat_title": title, "file_name": file.file_name,
+         "mime_type": file.mime_type, "file_size": file.file_size,
+         "remote_path": file.remote_path, "uploaded_at": file.uploaded_at}
+        for file, title in rows
+    ]}
