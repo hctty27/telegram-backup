@@ -54,6 +54,13 @@ func TestDurablePipeline(t *testing.T){
  if err=pool.QueryRow(ctx,"INSERT INTO storage_remotes(name,kind,config_ciphertext,enabled) VALUES($1,'test',decode('','hex'),true) RETURNING id",name).Scan(&remote);err!=nil{t.Fatal(err)}
  if _,err=pool.Exec(ctx,"INSERT INTO backup_policies(chat_id,remote_id,enabled) VALUES($1,$2,true)",chat,remote);err!=nil{t.Fatal(err)}
  if err=e.Schedule(ctx);err!=nil{t.Fatal(err)}
+ event:=tgservice.LiveEvent{AccountID:account,PeerKind:"chat",PeerID:100,Media:tgservice.Media{MessageID:42,Date:time.Unix(1700000000,0),Key:"document:123",Name:"test.mp4",MIME:"video/mp4",Size:3}}
+ if err=e.IngestLive(ctx,event);err!=nil{t.Fatal(err)}
+ if err=e.IngestLive(ctx,event);err!=nil{t.Fatal(err)}
+ var high int64
+ if err=pool.QueryRow(ctx,"SELECT incremental_high_water FROM sync_checkpoints WHERE chat_id=$1",chat).Scan(&high);err!=nil||high!=0{t.Fatalf("live event moved history cursor: %d %v",high,err)}
+ ignored:=event;ignored.PeerID=999
+ if err=e.IngestLive(ctx,ignored);err!=nil{t.Fatal(err)}
  if err=e.Sync(ctx,queue.SyncArgs{ChatID:chat});err!=nil{t.Fatal(err)}
  if err=e.Sync(ctx,queue.SyncArgs{ChatID:chat});err!=nil{t.Fatal(err)}
  var count int
