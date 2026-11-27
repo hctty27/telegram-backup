@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "5.90.5",
-    "lucide-react": "0.468.0",
+    "lucide-react": "1.79.0",
     "react": "19.1.1",
     "react-dom": "19.1.1",
     "clsx": "2.1.1",
