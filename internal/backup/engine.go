@@ -85,7 +85,7 @@ func(e *Engine)Sync(ctx context.Context,a queue.SyncArgs)error{
  if errors.Is(err,pgx.ErrNoRows){return nil};if err!=nil{return err}
  peer,err:=tgservice.Peer(kind,peerID,hash);if err!=nil{return err}
  page,err:=e.Telegram.ReadPage(ctx,account,peer,int(high),int(before))
- if err!=nil{return fmt.Errorf("telegram history failed: %T",err)}
+ if err!=nil{var backoff *tgservice.BackoffError;if errors.As(err,&backoff){return river.JobSnooze(backoff.Wait)};return fmt.Errorf("telegram history failed: %T",err)}
  tx,err:=e.Pool.Begin(ctx);if err!=nil{return err};defer tx.Rollback(ctx)
  // Recheck policy and cursor before committing; changes made during network I/O
  // must not cause new discoveries to use a stale destination.
@@ -159,7 +159,7 @@ func(e *Engine)Download(ctx context.Context,a queue.DownloadArgs)error{
    _,dbErr:=e.Pool.Exec(ctx,"UPDATE media_files SET state='retry_wait',last_error='waiting for disk space',updated_at=now() WHERE id=$1",a.MediaID)
    if dbErr!=nil{return dbErr};return river.JobSnooze(30*time.Second)
   }
-  if err!=nil{return fmt.Errorf("media download failed: %T",err)}
+  if err!=nil{var backoff *tgservice.BackoffError;if errors.As(err,&backoff){return river.JobSnooze(backoff.Wait)};return fmt.Errorf("media download failed: %T",err)}
  }else{return statErr}
  tx,err:=e.Pool.Begin(ctx);if err!=nil{return err};defer tx.Rollback(ctx)
  if _,err=tx.Exec(ctx,"UPDATE media_files SET state='downloaded',local_path=$2,staged_bytes=$3,last_error=NULL,updated_at=now() WHERE id=$1",a.MediaID,target,expected);err!=nil{return err}
