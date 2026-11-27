@@ -20,6 +20,7 @@ func(e *BackoffError)Error()string{return "Telegram rate limit active"}
 type Service struct{
  Pool *pgxpool.Pool
  Box *security.Box
+ Residents *Residents
  mu sync.Mutex
  gates map[int64]chan struct{}
 }
@@ -56,6 +57,15 @@ func(s *Service)Run(ctx context.Context,id int64,updates gotd.UpdateHandler,fn f
  defer clear(secret)
  client:=gotd.NewClient(appID,string(secret),gotd.Options{UpdateHandler:updates,NoUpdates:updates==nil,SessionStorage:&SessionStore{Pool:s.Pool,Box:s.Box,AccountID:id}})
  err=client.Run(ctx,func(ctx context.Context)error{return fn(ctx,client)})
+ return s.recordBackoff(id,err)
+}
+func(s *Service)checkBackoff(ctx context.Context,id int64)error{
+ var seconds float64
+ if err:=s.Pool.QueryRow(ctx,"SELECT CASE WHEN flood_wait_until>now() THEN extract(epoch FROM flood_wait_until-now())::float8 ELSE 0 END FROM telegram_accounts WHERE id=$1 AND enabled",id).Scan(&seconds);err!=nil{return err}
+ if seconds>0{return &BackoffError{Wait:time.Duration(seconds*float64(time.Second))+time.Second}}
+ return nil
+}
+func(s *Service)recordBackoff(id int64,err error)error{
  if wait,ok:=tgerr.AsFloodWait(err);ok{
   wait=max(wait,time.Second)+time.Second
   save,cancel:=context.WithTimeout(context.Background(),3*time.Second);defer cancel()
@@ -65,6 +75,7 @@ func(s *Service)Run(ctx context.Context,id int64,updates gotd.UpdateHandler,fn f
  return err
 }
 func(s *Service)Authorized(ctx context.Context,id int64,fn func(context.Context,*gotd.Client)error)error{
+ if s.Residents!=nil{return s.Residents.Do(ctx,id,fn)}
  return s.Run(ctx,id,nil,func(ctx context.Context,c *gotd.Client)error{
   status,err:=c.Auth().Status(ctx);if err!=nil{return err}
   if !status.Authorized{return errors.New("Telegram account not authorized")}
