@@ -98,10 +98,20 @@ func(s *Service)Fetch(ctx context.Context,account int64,peer tg.InputPeerClass,m
  return s.Authorized(ctx,account,func(ctx context.Context,c *gotd.Client)error{
   list,err:=query.Messages(c.API()).GetMessagesWithEntities(ctx,peer,msgID);if err!=nil{return err}
   for _,e:=range list{
-   m,ok:=extract(e);if !ok||m.MessageID!=msgID||m.Key!=key||m.Size!=expected{continue}
+   m,ok:=extract(e);if !ok||m.MessageID!=msgID||m.Key!=key||m.Size!=expected||!samePeer(peer,e.Peer){continue}
    file,_:=e.File()
    _,err=c.Download(file.Location).WithSize(expected).Stream(ctx,w);return err
   }
   return errors.New("media missing or changed since discovery")
  })
+}
+
+func samePeer(a,b tg.InputPeerClass)bool{
+ switch p:=a.(type){
+ case *tg.InputPeerChat:q,ok:=b.(*tg.InputPeerChat);return ok&&q.ChatID==p.ChatID
+ case *tg.InputPeerChannel:q,ok:=b.(*tg.InputPeerChannel);return ok&&q.ChannelID==p.ChannelID
+ case *tg.InputPeerUser:q,ok:=b.(*tg.InputPeerUser);return ok&&q.UserID==p.UserID
+ case *tg.InputPeerSelf:_,ok:=b.(*tg.InputPeerSelf);return ok
+ default:return false
+ }
 }
