@@ -208,7 +208,7 @@ async def update_telegram_credentials(
     if api_hash:
         await set_config_value(db, "telegram_api_hash", api_hash, secret=True)
     else:
-        api_hash = await get_config_value(db, "telegram_api_hash") or ""
+        api_hash = await get_config_value(db, "telegram_api_hash", settings.telegram_api_hash) or ""
     if not api_hash:
         raise HTTPException(status_code=400, detail="Telegram API Hash is required.")
     await set_config_value(db, "telegram_api_id", str(payload.api_id))

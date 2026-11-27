@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -35,6 +36,16 @@ class TelegramService:
         self._phone_code_hash = None
         return await self.connect()
 
+    def _secure_session_file(self) -> None:
+        session_path = Path(settings.telegram_session)
+        if not session_path.suffix:
+            session_path = session_path.with_suffix(".session")
+        if session_path.is_file():
+            try:
+                os.chmod(session_path, 0o600)
+            except OSError:
+                pass
+
     def _ensure_client(self) -> TelegramClient:
         if not self.configured:
             raise RuntimeError("Telegram API ID and API Hash have not been configured.")
@@ -54,6 +65,7 @@ class TelegramService:
         if not client.is_connected():
             await client.connect()
         self.authorized = await client.is_user_authorized()
+        self._secure_session_file()
         return self.authorized
 
     async def disconnect(self) -> None:
@@ -73,6 +85,7 @@ class TelegramService:
         sent = await client.send_code_request(phone)
         self._login_phone = phone
         self._phone_code_hash = sent.phone_code_hash
+        self._secure_session_file()
 
     async def verify_login_code(self, code: str) -> bool:
         if not self.client or not self.client.is_connected():
@@ -88,6 +101,7 @@ class TelegramService:
         except SessionPasswordNeededError:
             return False
         self.authorized = await self.client.is_user_authorized()
+        self._secure_session_file()
         self._login_phone = None
         self._phone_code_hash = None
         return self.authorized
@@ -97,6 +111,7 @@ class TelegramService:
             raise RuntimeError("Login session expired. Request a new verification code.")
         await self.client.sign_in(password=password)
         self.authorized = await self.client.is_user_authorized()
+        self._secure_session_file()
         self._login_phone = None
         self._phone_code_hash = None
         return self.authorized

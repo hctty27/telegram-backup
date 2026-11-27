@@ -1,3 +1,4 @@
+import os
 from collections.abc import AsyncIterator
 
 from sqlalchemy.ext.asyncio import (
@@ -26,6 +27,11 @@ SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 async def init_database() -> None:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.download_dir.mkdir(parents=True, exist_ok=True)
+    for private_dir in (settings.data_dir, settings.download_dir):
+        try:
+            os.chmod(private_dir, 0o700)
+        except OSError:
+            pass
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
 
