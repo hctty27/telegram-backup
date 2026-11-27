@@ -8,6 +8,7 @@ import (
 
  gotd "github.com/gotd/td/telegram"
  "github.com/gotd/td/telegram/query/messages"
+ "github.com/gotd/td/telegram/updates"
  "github.com/gotd/td/tg"
 )
 
@@ -89,11 +90,23 @@ func(r *Residents)run(ctx context.Context,id int64,c *resident){
  }
  d.OnNewMessage(func(ctx context.Context,_ tg.Entities,u *tg.UpdateNewMessage)error{return deliver(ctx,u.Message)})
  d.OnNewChannelMessage(func(ctx context.Context,_ tg.Entities,u *tg.UpdateNewChannelMessage)error{return deliver(ctx,u.Message)})
- // Single client owner; updates are delivered independently of serialized RPC
- // operations. Periodic history scans remain the durable gap-recovery path.
- err:=r.service.Run(ctx,id,d,func(life context.Context,client *gotd.Client)error{
+ store:=&UpdateStore{Pool:r.service.Pool,AccountID:id}
+ rescan:=func(){
+  call,cancel:=context.WithTimeout(ctx,5*time.Second);defer cancel()
+  _,_=r.service.Pool.Exec(call,`UPDATE sync_checkpoints s SET next_scan_at=now() FROM telegram_chats c WHERE c.id=s.chat_id AND c.account_id=$1 AND c.enabled`,id)
+ }
+ gaps:=updates.New(updates.Config{Handler:d,Storage:store,AccessHasher:store,UserAccessHasher:store,StopOnApplyError:true,BeforeRun:updates.BeforeRunBuffer,MaxChannelDifferenceConcurrency:2,OnTooLong:rescan,OnLoadUserStateFailed:rescan,OnChannelTooLong:func(int64){rescan()},OnLoadChannelStateFailed:func(int64){rescan()}})
+ err:=r.service.Run(ctx,id,gaps,func(life context.Context,client *gotd.Client)error{
   status,err:=client.Auth().Status(life);if err!=nil{return err}
   if !status.Authorized{return errors.New("Telegram account not authorized")}
+  self,err:=client.Self(life);if err!=nil{return err}
+  var expected int64
+  if err=r.service.Pool.QueryRow(life,"SELECT telegram_user_id FROM telegram_accounts WHERE id=$1 AND enabled",id).Scan(&expected);err!=nil{return err}
+  if self.ID!=expected||self.Bot{return errors.New("resident identity mismatch")}
+  life,cancelLife:=context.WithCancel(life)
+  gapDone:=make(chan error,1)
+  go func(){err:=gaps.Run(life,client.API(),self.ID,updates.AuthOptions{});gapDone<-err;cancelLife()}()
+  defer func(){cancelLife();<-gapDone}()
   for{
    select{
    case <-life.Done():return life.Err()
