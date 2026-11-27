@@ -98,7 +98,9 @@ func privateDir(p string)error{
  if !info.IsDir()||info.Mode().Perm()&0077!=0{return errors.New("data directory must be private")}
  return nil
 }
-var partialName=regexp.MustCompile("^[1-9][0-9]*-[0-9]+[.]part$")
+// Only obsolete random staging files and incomplete checkpoint writes are removed.
+// Stable .resume.part/.resume.json files survive restart.
+var partialName=regexp.MustCompile("^([1-9][0-9]*-[0-9]+[.]part|resume-checkpoint-[0-9]+[.]tmp)$")
 func clearPartials(root string)error{
  entries,err:=os.ReadDir(root);if err!=nil{return err}
  for _,entry:=range entries{
