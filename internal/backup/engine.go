@@ -99,21 +99,7 @@ func(e *Engine)Sync(ctx context.Context,a queue.SyncArgs)error{
  if errors.Is(err,pgx.ErrNoRows){return nil};if err!=nil{return err}
  if currentRemote!=remote||currentHigh!=high||currentBefore!=before||currentScan!=scanHigh{return errors.New("scan configuration changed")}
  for _,m:=range page.Media{
-  var message,media,replica int64
-  err=tx.QueryRow(ctx,`INSERT INTO messages(chat_id,telegram_message_id,sent_at) VALUES($1,$2,$3)
-  ON CONFLICT(chat_id,telegram_message_id) DO UPDATE SET sent_at=EXCLUDED.sent_at RETURNING id`,a.ChatID,m.MessageID,m.Date).Scan(&message)
-  if err!=nil{return err}
-  var size any=m.Size
-  state:="discovered"
-  if m.Size<=0{size=nil;state="blocked"}else if m.Size>e.MaxFile{state="blocked"}
-  err=tx.QueryRow(ctx,`INSERT INTO media_files(message_id,attachment_key,filename,mime_type,expected_bytes,state,last_error)
-  VALUES($1,$2,$3,$4,$5,$6,CASE WHEN $6='blocked' THEN 'unknown size or exceeds staging quota' END)
-  ON CONFLICT(message_id,attachment_key) DO NOTHING RETURNING id`,message,m.Key,safeName(m.Name),m.MIME,size,state).Scan(&media)
-  if errors.Is(err,pgx.ErrNoRows){continue};if err!=nil{return err}
-  key:=fmt.Sprintf("TelegramBackup/%d/%s-%d/%s/%d-%d-%s",account,kind,peerID,m.Date.Format("2006/01"),m.MessageID,media,safeName(m.Name))
-  err=tx.QueryRow(ctx,`INSERT INTO media_replicas(media_id,remote_id,remote_path) VALUES($1,$2,$3) RETURNING id`,media,remote,key).Scan(&replica)
-  if err!=nil{return err}
-  if state=="discovered"{if err=queue.EnqueueTx(ctx,e.Jobs,tx,queue.DownloadArgs{MediaID:media});err!=nil{return err}}
+  if err=e.ingest(ctx,tx,a.ChatID,account,kind,peerID,remote,m);err!=nil{return err}
  }
  scanHigh=max(scanHigh,int64(page.First))
  if page.Complete{
@@ -210,5 +196,41 @@ func(e *Engine)Cleanup(ctx context.Context,a queue.CleanupArgs)error{
  if errors.Is(err,pgx.ErrNoRows){return nil};if err!=nil{return err}
  if err=transfer.CleanupVerified(e.Root,a.MediaID,local);err!=nil{return err}
  if _,err=tx.Exec(ctx,"UPDATE media_files SET state='completed',local_path=NULL,staged_bytes=0,last_error=NULL,updated_at=now() WHERE id=$1",a.MediaID);err!=nil{return err}
+ return tx.Commit(ctx)
+}
+
+func(e *Engine)ingest(ctx context.Context,tx pgx.Tx,chatID,account int64,kind string,peerID,remote int64,m tgservice.Media)error{
+ var err error
+  var message,media,replica int64
+  err=tx.QueryRow(ctx,`INSERT INTO messages(chat_id,telegram_message_id,sent_at) VALUES($1,$2,$3)
+  ON CONFLICT(chat_id,telegram_message_id) DO UPDATE SET sent_at=EXCLUDED.sent_at RETURNING id`,chatID,m.MessageID,m.Date).Scan(&message)
+  if err!=nil{return err}
+  var size any=m.Size
+  state:="discovered"
+  if m.Size<=0{size=nil;state="blocked"}else if m.Size>e.MaxFile{state="blocked"}
+  err=tx.QueryRow(ctx,`INSERT INTO media_files(message_id,attachment_key,filename,mime_type,expected_bytes,state,last_error)
+  VALUES($1,$2,$3,$4,$5,$6,CASE WHEN $6='blocked' THEN 'unknown size or exceeds staging quota' END)
+  ON CONFLICT(message_id,attachment_key) DO NOTHING RETURNING id`,message,m.Key,safeName(m.Name),m.MIME,size,state).Scan(&media)
+  if errors.Is(err,pgx.ErrNoRows){return nil};if err!=nil{return err}
+  key:=fmt.Sprintf("TelegramBackup/%d/%s-%d/%s/%d-%d-%s",account,kind,peerID,m.Date.Format("2006/01"),m.MessageID,media,safeName(m.Name))
+  err=tx.QueryRow(ctx,`INSERT INTO media_replicas(media_id,remote_id,remote_path) VALUES($1,$2,$3) RETURNING id`,media,remote,key).Scan(&replica)
+  if err!=nil{return err}
+  if state=="discovered"{if err=queue.EnqueueTx(ctx,e.Jobs,tx,queue.DownloadArgs{MediaID:media});err!=nil{return err}}
+
+ return nil
+}
+
+// IngestLive shares the history ingestion transaction and unique keys but never
+// advances a scan cursor. A new message can be queued while old history scans.
+func(e *Engine)IngestLive(ctx context.Context,event tgservice.LiveEvent)error{
+ tx,err:=e.Pool.Begin(ctx);if err!=nil{return err};defer tx.Rollback(ctx)
+ var chat,remote int64
+ err=tx.QueryRow(ctx,`SELECT c.id,p.remote_id FROM telegram_chats c
+ JOIN backup_policies p ON p.chat_id=c.id JOIN telegram_accounts a ON a.id=c.account_id
+ JOIN storage_remotes r ON r.id=p.remote_id
+ WHERE c.account_id=$1 AND c.peer_kind=$2 AND c.peer_id=$3 AND c.enabled AND p.enabled AND a.enabled AND r.enabled
+ FOR UPDATE OF c,p`,event.AccountID,event.PeerKind,event.PeerID).Scan(&chat,&remote)
+ if errors.Is(err,pgx.ErrNoRows){return nil};if err!=nil{return err}
+ if err=e.ingest(ctx,tx,chat,event.AccountID,event.PeerKind,event.PeerID,remote,event.Media);err!=nil{return err}
  return tx.Commit(ctx)
 }
