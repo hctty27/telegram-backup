@@ -94,13 +94,13 @@ func(s *Service)ReadPage(ctx context.Context,account int64,peer tg.InputPeerClas
 
 // Fetch resolves a fresh Telegram file reference for every attempt, rather
 // than persisting an expiring reference. Verify the media identity and size.
-func(s *Service)Fetch(ctx context.Context,account int64,peer tg.InputPeerClass,msgID int,key string,expected int64,w io.Writer)error{
+func(s *Service)Fetch(ctx context.Context,account int64,peer tg.InputPeerClass,msgID int,key string,expected,offset int64,w io.Writer)error{
  return s.Authorized(ctx,account,func(ctx context.Context,c *gotd.Client)error{
   list,err:=query.Messages(c.API()).GetMessagesWithEntities(ctx,peer,msgID);if err!=nil{return err}
   for _,e:=range list{
    m,ok:=extract(e);if !ok||m.MessageID!=msgID||m.Key!=key||m.Size!=expected||!samePeer(peer,e.Peer){continue}
    file,_:=e.File()
-   _,err=c.Download(file.Location).WithSize(expected).Stream(ctx,w);return err
+   _,err=c.Download(file.Location).WithSize(expected).WithVerify(true).WithOffset(offset).Stream(ctx,w);return err
   }
   return errors.New("media missing or changed since discovery")
  })
