@@ -88,3 +88,23 @@ func(r *Rclone)UploadVerified(ctx context.Context,source,remote,key string)(Veri
  }
  return Verified{ID:item.ID,Bytes:n,SHA256:localSHA},nil
 }
+
+// TestRemote validates a name from the operator-owned configuration before it
+// can be assigned to a policy. Output is discarded because it may reveal paths.
+func(r *Rclone)TestRemote(ctx context.Context,remote string)error{
+ if !remoteName.MatchString(remote){return errors.New("invalid remote name")}
+ r.mu.Lock();defer r.mu.Unlock()
+ cfg,err:=os.Lstat(r.Config)
+ if err!=nil||!cfg.Mode().IsRegular()||cfg.Mode().Perm()&0077!=0{return errors.New("private rclone config required")}
+ // Reject undefined remotes before invoking the backend.
+ var out cappedBuffer
+ cmd:=r.command(ctx,"listremotes");cmd.Stdout=&out;cmd.Stderr=io.Discard
+ if err=cmd.Run();err!=nil{return errors.New("remote inventory failed")}
+ found:=false
+ for _,line:=range strings.Split(string(out.data),"\n"){if strings.TrimSpace(line)==remote+":"{found=true;break}}
+ if !found{return errors.New("remote not configured")}
+ cmd=r.command(ctx,"lsd",remote+":","--max-depth","1")
+ cmd.Stdout=io.Discard;cmd.Stderr=io.Discard
+ if err=cmd.Run();err!=nil{return errors.New("remote connection test failed")}
+ return nil
+}
