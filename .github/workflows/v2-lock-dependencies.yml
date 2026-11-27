@@ -2,7 +2,7 @@ name: V2 lock dependencies
 on:
   push:
     branches: [v2-rewrite]
-    paths: ['.github/workflows/v2-lock-dependencies.yml']
+    paths: ['.github/workflows/v2-lock-dependencies.yml', 'go.mod', 'web/package.json']
   workflow_dispatch:
 permissions:
   contents: read

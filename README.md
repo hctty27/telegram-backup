@@ -30,11 +30,12 @@ docker compose ps
 - [安装、限制和验证状态](docs/V2-STATUS.md)
 - [Telegram 独立联调工具](docs/V2-PROBE.md)
 
-Go 1.27.4 / Node 22；CI 执行前端构建、Go build/vet/race、数据库迁移、模拟备份集成、Docker 和全新 Compose 启动检查。依赖锁文件尚待纳入仓库，最终真实服务验收尚未完成。
+Go 1.27.4 / Node 22；CI 执行前端构建、Go build/vet/race、数据库迁移、模拟备份集成、Docker 和全新 Compose 启动检查。依赖锁文件已入库；安全修复版本正在重新生成锁文件并等待 CI，最终真实服务验收尚未完成。
 
 ```sh
-(cd web && npm install && npm run build)
-go mod tidy
+(cd web && npm ci && npm run build)
+go mod tidy -diff
+go mod verify
 go build ./...
 go vet ./...
 go test -race ./...
