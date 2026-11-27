@@ -76,13 +76,13 @@ jobs:
           pid=$!
           trap 'kill "$pid" 2>/dev/null || true' EXIT
           for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8081/api/ready >/dev/null; then break; fi
+            if curl -fsS http://127.0.0.1:8080/api/ready >/dev/null; then break; fi
             sleep 1
           done
-          curl -fsS http://127.0.0.1:8081/api/health
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/api/overview)" = 401
-          curl -fsS -H "Authorization: Bearer $TGB_ADMIN_TOKEN" http://127.0.0.1:8081/api/overview | jq -e '.accounts == 0 and .completed == 0'
-          curl -fsS http://127.0.0.1:8081/ | grep -q 'TelegramBackup'
+          curl -fsS http://127.0.0.1:8080/api/health
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/overview)" = 401
+          curl -fsS -H "Authorization: Bearer $TGB_ADMIN_TOKEN" http://127.0.0.1:8080/api/overview | jq -e '.accounts == 0 and .completed == 0'
+          curl -fsS http://127.0.0.1:8080/ | grep -q 'TelegramBackup'
       - name: Durable backup pipeline integration test
         env:
           TGB_INTEGRATION_DATABASE_URL: postgres://postgres:ci-only-password@127.0.0.1:5432/telegram_backup_test?sslmode=disable

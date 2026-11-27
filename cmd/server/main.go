@@ -28,7 +28,7 @@ import (
 func main(){
  if len(os.Args)==2&&os.Args[1]=="-healthcheck"{
   c:=&http.Client{Timeout:3*time.Second}
-  resp,err:=c.Get("http://127.0.0.1:8081/api/ready")
+  resp,err:=c.Get("http://127.0.0.1:8080/api/ready")
   if err!=nil{os.Exit(1)}
   resp.Body.Close();if resp.StatusCode!=http.StatusNoContent{os.Exit(1)};return
  }
@@ -36,7 +36,7 @@ func main(){
 }
 func run()error{
  ctx,stop:=signal.NotifyContext(context.Background(),os.Interrupt,syscall.SIGTERM);defer stop()
- addr:=os.Getenv("TGB_HTTP_ADDR");if addr==""{addr="127.0.0.1:8081"}
+ addr:=os.Getenv("TGB_HTTP_ADDR");if addr==""{addr="127.0.0.1:8080"}
  var handler http.Handler=api.NewRouter()
  if url:=os.Getenv("TGB_DATABASE_URL");url!=""{
   pool,err:=pgxpool.New(ctx,url);if err!=nil{return err};defer pool.Close()

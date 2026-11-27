@@ -9,7 +9,7 @@ go mod tidy -diff
 go test -race ./...
 go run ./cmd/server
 # in another terminal
-curl http://127.0.0.1:8081/api/health
+curl http://127.0.0.1:8080/api/health
 ```
 
 ## Real Telegram verification (Linux)

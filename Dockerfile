@@ -31,6 +31,6 @@ WORKDIR /app
 COPY --from=builder /out/ /usr/local/bin/
 COPY migrations/ /app/migrations/
 USER 10001:10001
-ENV TGB_HTTP_ADDR=0.0.0.0:8081 TGB_MIGRATIONS_DIR=/app/migrations
-EXPOSE 8081
+ENV TGB_HTTP_ADDR=0.0.0.0:8080 TGB_MIGRATIONS_DIR=/app/migrations
+EXPOSE 8080
 CMD ["server"]
