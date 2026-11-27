@@ -49,7 +49,12 @@ func NewDashboardRouter(pool *pgxpool.Pool,token string,assets fs.FS, additional
   r.Get("/chats",jsonQuery(pool,`SELECT coalesce(json_agg(x),'[]'::json) FROM
    (SELECT c.id::text,c.title,c.peer_kind,c.enabled,p.remote_id::text,p.scan_interval_seconds FROM telegram_chats c LEFT JOIN backup_policies p ON p.chat_id=c.id ORDER BY c.id DESC LIMIT 100)x`))
   r.Get("/tasks",jsonQuery(pool,`SELECT coalesce(json_agg(x),'[]'::json) FROM
-   (SELECT id::text,filename,state,expected_bytes,updated_at,last_error FROM media_files WHERE state<>'completed' ORDER BY id DESC LIMIT 100)x`))
+   (SELECT f.id::text,f.filename,f.state,f.expected_bytes,f.updated_at,f.last_error,
+   j.state::text AS queue_state,j.attempt,j.max_attempts FROM media_files f
+   LEFT JOIN LATERAL(SELECT rj.state,rj.attempt,rj.max_attempts FROM river_job rj
+   WHERE (rj.kind IN ('media_download','media_cleanup') AND rj.args->>'media_id'=f.id::text)
+   OR (rj.kind='media_upload' AND EXISTS(SELECT 1 FROM media_replicas p WHERE p.media_id=f.id AND p.id::text=rj.args->>'replica_id'))
+   ORDER BY rj.id DESC LIMIT 1) j ON true WHERE f.state<>'completed' ORDER BY f.id DESC LIMIT 100)x`))
   r.Get("/archive",jsonQuery(pool,`SELECT coalesce(json_agg(x),'[]'::json) FROM
    (SELECT id::text,filename,state,expected_bytes,updated_at FROM media_files WHERE state='completed' ORDER BY id DESC LIMIT 100)x`))
   for _,register:=range additional{register(r)}
