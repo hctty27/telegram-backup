@@ -57,7 +57,7 @@ class RcloneStorage:
             legacy = settings.rclone_remote
             legacy_name = legacy.split(":", 1)[0]
             # root_folder_id configures the remote root itself; do not append it again to the destination.
-            destination = f"{name}:"
+            destination = legacy if legacy_name in remote_names else f"{remote_names[0]}:"
             await set_config_value(db, "storage_destination", destination)
         await db.commit()
         return True
