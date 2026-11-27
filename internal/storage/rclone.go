@@ -2,6 +2,7 @@
 package storage
 
 import (
+ "bytes"
  "context"
  "crypto/md5"
  "crypto/sha256"
@@ -16,6 +17,8 @@ import (
  "regexp"
  "strings"
  "sync"
+
+ "github.com/hctty27/telegram-backup/internal/monitor"
 )
 
 var remoteName=regexp.MustCompile("^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
@@ -59,8 +62,8 @@ func(r *Rclone)UploadVerified(ctx context.Context,source,remote,key string)(Veri
  n,err:=io.Copy(io.MultiWriter(sha,md),f);if err!=nil||n!=st.Size(){return result,errors.New("cannot hash staged file")}
  if !filepath.IsAbs(source){return result,errors.New("absolute local source required")}
  // Source is immutable by contract during this operation.
- cmd:=r.command(ctx,"copyto",source,dest,"--immutable","--checksum","--retries","3","--low-level-retries","10")
- cmd.Stdout=io.Discard;cmd.Stderr=io.Discard
+ cmd:=r.command(ctx,"copyto",source,dest,"--immutable","--checksum","--retries","3","--low-level-retries","10","--use-json-log","--stats","1s","--stats-log-level","NOTICE")
+ cmd.Stdout=io.Discard;cmd.Stderr=&statsWriter{report:func(n int64){monitor.Report(ctx,n)}}
  if err:=cmd.Run();err!=nil{return result,errors.New("cloud upload failed")}
  parent:=path.Dir(key)
  if parent=="."{parent=""}
@@ -86,6 +89,7 @@ func(r *Rclone)UploadVerified(ctx context.Context,source,remote,key string)(Veri
   cmd.Stdout=remoteHash;cmd.Stderr=io.Discard
   if err:=cmd.Run();err!=nil||hex.EncodeToString(remoteHash.Sum(nil))!=localSHA{return result,errors.New("remote readback verification failed")}
  }
+ monitor.Report(ctx,n)
  return Verified{ID:item.ID,Bytes:n,SHA256:localSHA},nil
 }
 
@@ -107,4 +111,29 @@ func(r *Rclone)TestRemote(ctx context.Context,remote string)error{
  cmd.Stdout=io.Discard;cmd.Stderr=io.Discard
  if err=cmd.Run();err!=nil{return errors.New("remote connection test failed")}
  return nil
+}
+
+// statsWriter discards logs and accepts only numeric byte counts from rclone's
+// JSON stats. Arbitrarily large diagnostic lines cannot grow memory unbounded.
+type statsWriter struct{
+ line []byte
+ dropping bool
+ report func(int64)
+}
+func(w *statsWriter)Write(p []byte)(int,error){
+ size:=len(p)
+ for len(p)>0{
+  i:=bytes.IndexByte(p,'\n')
+  if i<0{i=len(p)}
+  if !w.dropping{
+   if len(w.line)+i>64<<10{w.line=nil;w.dropping=true}else{w.line=append(w.line,p[:i]...)}
+  }
+  if i==len(p){break}
+  if !w.dropping{
+   var event struct{Stats *struct{Bytes int64 `json:"bytes"`} `json:"stats"`}
+   if json.Unmarshal(w.line,&event)==nil&&event.Stats!=nil&&event.Stats.Bytes>=0{w.report(event.Stats.Bytes)}
+  }
+  w.line=w.line[:0];w.dropping=false;p=p[i+1:]
+ }
+ return size,nil
 }
