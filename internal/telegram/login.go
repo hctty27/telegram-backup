@@ -77,8 +77,8 @@ func(m *LoginManager)run(ctx context.Context,id int64,a *attempt){
   }
   user,err:=c.Self(ctx);if err!=nil{return err}
   if user.Bot{return errors.New("user account required")}
-  _,err=m.service.Pool.Exec(ctx,"UPDATE telegram_accounts SET telegram_user_id=$2,enabled=true WHERE id=$1 AND (telegram_user_id IS NULL OR telegram_user_id=$2)",id,user.ID)
-  return err
+  tag,err:=m.service.Pool.Exec(ctx,"UPDATE telegram_accounts SET telegram_user_id=$2,enabled=true WHERE id=$1 AND (telegram_user_id IS NULL OR telegram_user_id=$2)",id,user.ID)
+  if err!=nil{return err};if tag.RowsAffected()!=1{return errors.New("account identity changed")};return nil
  })
  if err!=nil{m.set(a,LoginStatus{State:"failed"});return}
  m.set(a,LoginStatus{State:"authorized"})
