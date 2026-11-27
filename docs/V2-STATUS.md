@@ -38,3 +38,10 @@ Access host loopback 8081 through a trusted HTTPS reverse proxy or private SSH t
 - Google Drive credential import, optional direct Web OAuth callback and encrypted configuration are implemented; real Google authorization, write-permission validation, credential rotation, other storage providers, per-chat filters, web-editable disk limits, expanded pagination and additional monitoring remain outstanding.
 - Unknown-size or oversized media are recorded as blocked rather than exceeding disk quota. Only the selected media exposed by gotd Elem.File is handled; unsupported media formats and edits need more coverage.
 - No legacy migration is a release blocker. No release has been published.
+
+
+Revision fa02246 passed the complete verification workflow (46023531057), including resume and realtime ingestion tests. Latest changes require independent CI confirmation.
+
+## Release acceptance
+
+CI also runs an actual local rclone round trip (including idempotent retry and immutable destination rejection) and a fresh Compose worker-startup smoke test. These checks are not Google Drive tests. For the live smoke test use a dedicated authorized account/chat and a dedicated Drive folder: test QR and optional 2FA, initial history, a new photo and video, restart midway through a download, confirm actual cloud content, check local cleanup, and verify low-space pause. Never publish production credentials in issue logs or CI. Confirm no data loss and inspect failed/blocked jobs before enabling larger chats.

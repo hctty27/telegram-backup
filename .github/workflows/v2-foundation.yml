@@ -47,7 +47,11 @@ jobs:
         run: go mod tidy
       - name: Compile and vet
         run: go build ./... && go vet ./...
+      - name: Install actual rclone CLI for integration tests
+        run: sudo apt-get update && sudo apt-get install -y rclone
       - name: Unit and race tests
+        env:
+          V2_REQUIRE_RCLONE_TEST: 'true'
         run: go test -race ./...
       - name: PostgreSQL and River migrations
         run: go run ./cmd/migrate && go run ./cmd/migrate
