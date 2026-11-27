@@ -18,11 +18,15 @@ RUN go mod tidy -diff && go mod verify \
  && CGO_ENABLED=0 go build -trimpath -o /out/migrate ./cmd/migrate \
  && CGO_ENABLED=0 go build -trimpath -o /out/telegram-probe ./cmd/telegram-probe
 
+FROM rclone/rclone:1.76.0 AS rclone
+
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates rclone \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --gid 10001 app && useradd --uid 10001 --gid 10001 --no-create-home app \
  && install -d -m 0700 -o app -g app /var/lib/telegram-backup-v2
+COPY --from=rclone /usr/local/bin/rclone /usr/local/bin/rclone
+RUN rclone version | grep -Fx 'rclone v1.76.0'
 WORKDIR /app
 COPY --from=builder /out/ /usr/local/bin/
 COPY migrations/ /app/migrations/

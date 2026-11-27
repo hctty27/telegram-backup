@@ -38,6 +38,7 @@ type object struct{
  Name string
  ID string
  Size int64
+ IsDir bool
  Hashes map[string]string
 }
 type cappedBuffer struct{ data []byte }
@@ -61,36 +62,71 @@ func(r *Rclone)UploadVerified(ctx context.Context,source,remote,key string)(Veri
  sha,md:=sha256.New(),md5.New()
  n,err:=io.Copy(io.MultiWriter(sha,md),f);if err!=nil||n!=st.Size(){return result,errors.New("cannot hash staged file")}
  if !filepath.IsAbs(source){return result,errors.New("absolute local source required")}
- // Source is immutable by contract during this operation.
- cmd:=r.command(ctx,"copyto",source,dest,"--immutable","--checksum","--retries","3","--low-level-retries","10","--use-json-log","--stats","1s","--stats-log-level","NOTICE")
- cmd.Stdout=io.Discard;cmd.Stderr=&statsWriter{report:func(n int64){monitor.Report(ctx,n)}}
- if err:=cmd.Run();err!=nil{return result,errors.New("cloud upload failed")}
+ localSHA:=hex.EncodeToString(sha.Sum(nil))
+ localMD:=hex.EncodeToString(md.Sum(nil))
  parent:=path.Dir(key)
  if parent=="."{parent=""}
+ // Ensure the parent exists before listing; never interpret an arbitrary
+ // listing error as absence. A missing destination is only a successful
+ // inventory containing zero exact-name matches.
+ if parent!=""{
+  cmd:=r.command(ctx,"mkdir",remote+":"+parent)
+  cmd.Stdout=io.Discard;cmd.Stderr=io.Discard
+  if err=cmd.Run();err!=nil{return result,errors.New("remote parent unavailable")}
+ }
+ matches,err:=r.inventory(ctx,remote,parent,path.Base(key))
+ if err!=nil{return result,err}
+ if len(matches)>0{
+  // Existing archive objects are read-only. Idempotent retry never copies
+  // a file over an existing object, even with an older rclone binary.
+  return r.verifyObject(ctx,dest,matches,n,localSHA,localMD)
+ }
+ // Source is immutable by contract during this operation. The fixed
+ // rclone version supplies an additional guard between inventory and copy.
+ // No high-level automatic copy retry: a job retry runs preflight again.
+ cmd:=r.command(ctx,"copyto",source,dest,"--immutable","--checksum","--retries","1","--low-level-retries","10","--use-json-log","--stats","1s","--stats-log-level","NOTICE")
+ cmd.Stdout=io.Discard;cmd.Stderr=&statsWriter{report:func(n int64){monitor.Report(ctx,n)}}
+ if err=cmd.Run();err!=nil{return result,errors.New("cloud upload failed")}
+ matches,err=r.inventory(ctx,remote,parent,path.Base(key))
+ if err!=nil{return result,err}
+ return r.verifyObject(ctx,dest,matches,n,localSHA,localMD)
+}
+func(r *Rclone)inventory(ctx context.Context,remote,parent,name string)([]object,error){
  var out cappedBuffer
- cmd=r.command(ctx,"lsjson",remote+":"+parent,"--files-only","--hash")
+ // Include directories so a same-name directory is a conflict too.
+ cmd:=r.command(ctx,"lsjson",remote+":"+parent,"--hash")
  cmd.Stdout=&out;cmd.Stderr=io.Discard
- if err:=cmd.Run();err!=nil{return result,errors.New("remote inventory failed")}
+ if err:=cmd.Run();err!=nil{return nil,errors.New("remote inventory failed")}
  var entries []object
- if err:=json.Unmarshal(out.data,&entries);err!=nil{return result,errors.New("invalid remote inventory")}
+ if err:=json.Unmarshal(out.data,&entries);err!=nil||entries==nil{return nil,errors.New("invalid remote inventory")}
  var matches []object
- for _,entry:=range entries{if entry.Name==path.Base(key){matches=append(matches,entry)}}
- if len(matches)!=1||matches[0].Size!=n{return result,errors.New("remote object missing, ambiguous, or wrong size")}
+ for _,entry:=range entries{if entry.Name==name{matches=append(matches,entry)}}
+ return matches,nil
+}
+func(r *Rclone)verifyObject(ctx context.Context,dest string,matches []object,n int64,localSHA,localMD string)(Verified,error){
+ var result Verified
+ if len(matches)!=1||matches[0].IsDir||matches[0].Size!=n{return result,errors.New("remote object missing, ambiguous, or wrong size")}
  item:=matches[0]
- localSHA:=hex.EncodeToString(sha.Sum(nil))
  if remoteSHA:=item.Hashes["SHA-256"];remoteSHA!="" {
   if !strings.EqualFold(remoteSHA,localSHA){return result,errors.New("remote SHA-256 mismatch")}
  }else if remoteMD:=item.Hashes["MD5"];remoteMD!=""{
-  if !strings.EqualFold(remoteMD,hex.EncodeToString(md.Sum(nil))){return result,errors.New("remote MD5 mismatch")}
+  if !strings.EqualFold(remoteMD,localMD){return result,errors.New("remote MD5 mismatch")}
  }else{
-  // No comparable provider hash: stream back into a hasher, without another local file.
+  // No comparable provider hash: stream back into a hasher, without
+  // another local file. Bound readback to the declared verified size.
   remoteHash:=sha256.New()
-  cmd=r.command(ctx,"cat",dest)
-  cmd.Stdout=remoteHash;cmd.Stderr=io.Discard
-  if err:=cmd.Run();err!=nil||hex.EncodeToString(remoteHash.Sum(nil))!=localSHA{return result,errors.New("remote readback verification failed")}
+  w:=&exactHashWriter{w:remoteHash,left:n}
+  cmd:=r.command(ctx,"cat",dest)
+  cmd.Stdout=w;cmd.Stderr=io.Discard
+  if err:=cmd.Run();err!=nil||w.left!=0||hex.EncodeToString(remoteHash.Sum(nil))!=localSHA{return result,errors.New("remote readback verification failed")}
  }
  monitor.Report(ctx,n)
  return Verified{ID:item.ID,Bytes:n,SHA256:localSHA},nil
+}
+type exactHashWriter struct{w io.Writer;left int64}
+func(w *exactHashWriter)Write(p []byte)(int,error){
+ if int64(len(p))>w.left{return 0,errors.New("remote readback exceeded expected size")}
+ n,err:=w.w.Write(p);w.left-=int64(n);return n,err
 }
 
 // TestRemote validates a name from the operator-owned configuration before it

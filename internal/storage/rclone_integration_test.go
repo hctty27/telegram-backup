@@ -35,8 +35,15 @@ func TestRcloneLocalRoundTrip(t *testing.T){
   v,err:=r.UploadVerified(ctx,file,"testremote",key)
   if err!=nil||v.Bytes!=int64(len(data))||v.SHA256!=hex.EncodeToString(want[:]){t.Fatalf("verified upload %d: %+v %v",i,v,err)}
  }
- if err:=os.WriteFile(file,[]byte("different content"),0600);err!=nil{t.Fatal(err)}
- if _,err:=r.UploadVerified(ctx,file,"testremote",key);err==nil{t.Fatal("overwriting archived content was allowed")}
+ changed:=append([]byte(nil),data...);changed[0]^=0xff
+ for _,other:=range [][]byte{[]byte("different content"),changed}{
+  if err:=os.WriteFile(file,other,0600);err!=nil{t.Fatal(err)}
+  if _,err:=r.UploadVerified(ctx,file,"testremote",key);err==nil{t.Fatal("overwriting archived content was allowed")}
+  got,err:=os.ReadFile(filepath.Join(remote,"archive","test.bin"))
+  if err!=nil||string(got)!=string(data){t.Fatal("remote archive changed")}
+ }
+ if err:=os.Mkdir(filepath.Join(remote,"archive","directory"),0700);err!=nil{t.Fatal(err)}
+ if _,err:=r.UploadVerified(ctx,file,"testremote","archive/directory");err==nil{t.Fatal("directory conflict allowed")}
  got,err:=os.ReadFile(filepath.Join(remote,"archive","test.bin"))
  if err!=nil||string(got)!=string(data){t.Fatal("remote archive changed")}
  if _,err=os.Stat(file);err!=nil{t.Fatal("storage adapter deleted local source")}

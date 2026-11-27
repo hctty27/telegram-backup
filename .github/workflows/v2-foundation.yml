@@ -52,7 +52,15 @@ jobs:
       - name: Compile and vet
         run: go build ./... && go vet ./...
       - name: Install actual rclone CLI for integration tests
-        run: sudo apt-get update && sudo apt-get install -y rclone
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull rclone/rclone:1.76.0
+          cid=$(docker create rclone/rclone:1.76.0)
+          trap 'docker rm -f "$cid" >/dev/null' EXIT
+          docker cp "$cid:/usr/local/bin/rclone" /tmp/tgb-rclone
+          sudo install -m 0755 /tmp/tgb-rclone /usr/local/bin/rclone
+          rclone version | grep -Fx 'rclone v1.76.0'
       - name: Unit and race tests
         env:
           V2_REQUIRE_RCLONE_TEST: 'true'

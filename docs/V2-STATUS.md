@@ -45,3 +45,7 @@ The dependency generation workflow is now read-only: generated locks must be rev
 ## Release acceptance
 
 CI also runs an actual local rclone round trip (including idempotent retry and immutable destination rejection) and a fresh Compose worker-startup smoke test. These checks are not Google Drive tests. For the live smoke test use a dedicated authorized account/chat and a dedicated Drive folder: test QR and optional 2FA, initial history, a new photo and video, restart midway through a download, confirm actual cloud content, check local cleanup, and verify low-space pause. Never publish production credentials in issue logs or CI. Confirm no data loss and inspect failed/blocked jobs before enabling larger chats.
+
+## Archive overwrite regression
+
+CI 46026185400 passed compilation and both dependency security scans but failed the real local rclone overwrite test. rclone v1.76.0 fixes immutable single-file copy (https://rclone.org/changelog/). CI and the runtime image now use the same pinned official rclone 1.76.0 image. The adapter creates the parent, checks its inventory before copying, returns verification for an identical object, and refuses mismatches, directories, duplicate names or listing errors. Post-copy verification remains mandatory. These checks are not an atomic remote compare-and-swap: external writers racing the upload and Drive's duplicate-folder semantics remain risks; dedicate the backup folder to this service. Latest CI and live Google Drive verification remain required.
