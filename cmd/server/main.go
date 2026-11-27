@@ -68,8 +68,12 @@ func run()error{
    service.Residents=residents
    defer func(){cancelResidents();residents.Wait()}()
    actions:=&api.Actions{Pool:pool,Telegram:service,Login:login,Engine:engine,Managed:cloud}
+   if redirect:=os.Getenv("V2_GOOGLE_REDIRECT_URI");redirect!=""{
+    actions.OAuth,err=api.NewDriveOAuth(cloud,redirect);if err!=nil{return err}
+   }
    handler,err=api.NewDashboardRouter(pool,os.Getenv("V2_ADMIN_TOKEN"),assets,actions.Routes)
    if err!=nil{return err}
+   if actions.OAuth!=nil{handler=actions.OAuth.Wrap(handler)}
    if err=jobs.Start(ctx);err!=nil{return err}
    defer func(){c,cancel:=context.WithTimeout(context.Background(),20*time.Second);defer cancel();_=jobs.Stop(c)}()
    go func(){
