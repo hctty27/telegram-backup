@@ -9,6 +9,7 @@ import (
  "os/signal"
  "path/filepath"
  "regexp"
+ "strconv"
  "syscall"
  "time"
 
@@ -54,8 +55,9 @@ func run()error{
    if err=owner.QueryRow(ctx,"SELECT pg_try_advisory_lock(7427611001)").Scan(&acquired);err!=nil||!acquired{return errors.New("another database worker owner exists")}
    defer func(){c,cancel:=context.WithTimeout(context.Background(),3*time.Second);defer cancel();_,_=owner.Exec(c,"SELECT pg_advisory_unlock(7427611001)") }()
    if err=clearPartials(stage);err!=nil{return err}
-   const quotaBytes int64=10<<30
-   q,err:=disk.New(quotaBytes,5<<30,func()(disk.Usage,error){return disk.MeasureDirectory(stage)});if err!=nil{return err}
+   quotaBytes,err:=gibSetting("V2_CACHE_GIB",10);if err!=nil{return err}
+   reserveBytes,err:=gibSetting("V2_MIN_FREE_GIB",5);if err!=nil{return err}
+   q,err:=disk.New(quotaBytes,reserveBytes,func()(disk.Usage,error){return disk.MeasureDirectory(stage)});if err!=nil{return err}
    service:=telegram.New(pool,box)
    login:=telegram.NewLoginManager(ctx,service)
    cloud:=&storage.Rclone{Config:filepath.Join(root,"rclone.conf")}
@@ -104,4 +106,12 @@ func clearPartials(root string)error{
   if err=os.Remove(filepath.Join(root,entry.Name()));err!=nil{return err}
  }
  return nil
+}
+
+func gibSetting(name string,fallback int64)(int64,error){
+ raw:=os.Getenv(name)
+ if raw==""{return fallback<<30,nil}
+ value,err:=strconv.ParseInt(raw,10,64)
+ if err!=nil||value<1||value>1048576{return 0,errors.New("invalid positive GiB setting: "+name)}
+ return value<<30,nil
 }
