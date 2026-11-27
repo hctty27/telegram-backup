@@ -107,7 +107,7 @@ class RcloneStorage:
         except json.JSONDecodeError:
             remote_secrets = {}
         for remote_name, credentials in remote_secrets.items():
-            env_name = remote_name.upper().replace("-", "_").replace(".", "_")
+            env_name = remote_name.upper()
             if credentials.get("client_id"):
                 environment[f"RCLONE_CONFIG_{env_name}_CLIENT_ID"] = credentials["client_id"]
             if credentials.get("client_secret"):
@@ -186,7 +186,7 @@ class RcloneStorage:
         saved_config = buffer.getvalue()
 
         credentials_env = {
-            f"RCLONE_CONFIG_{name.upper().replace('-', '_').replace('.', '_')}_CLIENT_ID": client_id.strip(),
+            f"RCLONE_CONFIG_{name.upper()}_CLIENT_ID": client_id.strip(),
             f"RCLONE_CONFIG_{name.upper().replace('-', '_').replace('.', '_')}_CLIENT_SECRET": client_secret.strip(),
         }
         with self._temporary_config(saved_config) as config_path:
