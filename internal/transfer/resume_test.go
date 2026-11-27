@@ -14,6 +14,7 @@ import(
 
 func testQuota(t *testing.T,root string,limit int64)*disk.Manager{
  t.Helper()
+ if err:=os.Chmod(root,0700);err!=nil{t.Fatal(err)}
  q,err:=disk.New(limit,0,func()(disk.Usage,error){
   entries,err:=os.ReadDir(root);if err!=nil{return disk.Usage{},err}
   var staged int64
