@@ -35,6 +35,8 @@ func fail(w http.ResponseWriter){http.Error(w,"operation failed; check configura
 func idParam(r *http.Request)(int64,error){id,err:=strconv.ParseInt(chi.URLParam(r,"id"),10,64);if err!=nil||id<=0{return 0,errors.New("invalid ID")};return id,nil}
 
 func(a *Actions)Routes(r chi.Router){
+ r.Get("/monitor",func(w http.ResponseWriter,r *http.Request){reply(w,a.snapshot())})
+ r.Get("/monitor/events",a.stream(make(chan struct{},8)))
  r.Post("/accounts",func(w http.ResponseWriter,r *http.Request){
   var req struct{APIID int `json:"api_id"`;APIHash string `json:"api_hash"`;Name string `json:"name"`}
   if decode(w,r,&req)!=nil{fail(w);return}
