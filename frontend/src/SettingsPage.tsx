@@ -50,6 +50,10 @@ export default function SettingsPage({ api, onRefresh }: Props) {
     email_pattern?: string | null; fragment_url?: string | null;
   } | null>(null);
   const [needsPassword, setNeedsPassword] = useState(false);
+  const [qrImage, setQrImage] = useState("");
+  const [qrStatus, setQrStatus] = useState<"idle" | "waiting" | "needs_password" | "authorized" | "expired" | "failed">("idle");
+  const [qrExpiresAt, setQrExpiresAt] = useState<string | null>(null);
+  const [qrError, setQrError] = useState<string | null>(null);
 
   const [remoteName, setRemoteName] = useState("google-drive");
   const [clientId, setClientId] = useState("");
@@ -101,6 +105,43 @@ export default function SettingsPage({ api, onRefresh }: Props) {
     setApiHash("");
   };
 
+  const startQrLogin = () => {
+    void run(async () => {
+      const result = await api.startTelegramQr();
+      setQrImage(result.qr_image);
+      setQrExpiresAt(result.expires_at);
+      setQrStatus("waiting");
+      setQrError(null);
+      setNeedsPassword(false);
+    }, "二维码已生成，请使用已登录的 Telegram 手机扫描");
+  };
+
+  useEffect(() => {
+    if (qrStatus !== "waiting") return;
+    let closed = false;
+    const poll = async () => {
+      try {
+        const result = await api.telegramQrStatus();
+        if (closed) return;
+        setQrStatus(result.status);
+        setQrError(result.error);
+        if (result.status === "needs_password") setNeedsPassword(true);
+        if (result.authorized) {
+          setQrImage("");
+          setNeedsPassword(false);
+          message.success("Telegram 二维码登录成功");
+          await refresh();
+          await onRefresh();
+        }
+      } catch (error) {
+        if (!closed) setQrError(error instanceof Error ? error.message : "读取二维码登录状态失败");
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 2000);
+    return () => { closed = true; window.clearInterval(timer); };
+  }, [qrStatus, api, onRefresh]);
+
   const sendCode = () => {
     if (!phone.trim()) {
       message.warning("请输入带国家区号的手机号，例如 +8613800000000");
@@ -132,10 +173,14 @@ export default function SettingsPage({ api, onRefresh }: Props) {
       return;
     }
     void run(async () => {
-      await api.verifyTelegramPassword(password);
+      const result = await api.verifyTelegramPassword(password);
       setNeedsPassword(false);
       setCodeSent(false);
       setPassword("");
+      if (result.authorized) {
+        setQrStatus("authorized");
+        setQrImage("");
+      }
     }, "Telegram 账号授权成功");
   };
 
@@ -233,7 +278,31 @@ export default function SettingsPage({ api, onRefresh }: Props) {
           </Button>
         </Space>
         <Divider />
-        <Title level={5}>用户账号登录</Title>
+        <Title level={5}>二维码登录（推荐）</Title>
+        <Paragraph type="secondary">
+          使用已经登录 Telegram 的手机扫描二维码并确认。无需短信验证码。二维码是一次性登录凭据，请勿截图或分享给他人。
+        </Paragraph>
+        <Space direction="vertical" className="full-width" align="start">
+          <Button type="primary" onClick={startQrLogin} loading={busy} disabled={!settings?.telegram_configured || settings?.telegram_authorized}>
+            {qrImage ? "重新生成二维码" : "生成登录二维码"}
+          </Button>
+          {qrImage && qrStatus === "waiting" && (
+            <Card size="small">
+              <img src={qrImage} alt="Telegram 登录二维码" style={{ display: "block", width: 240, maxWidth: "100%", height: "auto", margin: "0 auto" }} />
+              <Text type="secondary">手机 Telegram → 设置 → 设备 → 连接桌面设备</Text>
+              {qrExpiresAt && <Text type="secondary">有效期至：{new Date(qrExpiresAt).toLocaleTimeString()}</Text>}
+              <Tag color="processing">等待手机确认…</Tag>
+            </Card>
+          )}
+          {qrStatus === "needs_password" && (
+            <Alert type="warning" showIcon message="二维码已确认，请输入 Telegram 两步验证密码完成登录。" />
+          )}
+          {qrStatus === "expired" && <Alert type="warning" showIcon message="二维码已过期，请重新生成。" />}
+          {qrStatus === "failed" && <Alert type="error" showIcon message={qrError || "二维码登录失败，请检查后端日志。"} />}
+          {qrStatus === "authorized" && <Alert type="success" showIcon message="Telegram 账号已授权。" />}
+        </Space>
+        <Divider />
+        <Title level={5}>手机号验证码登录（备用）</Title>
         <Paragraph type="secondary">填写手机号并接收 Telegram 登录验证码；如果账号启用了两步验证，随后还需要输入 2FA 密码。</Paragraph>
         <Space direction="vertical" className="full-width">
           <Input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="手机号，例如 +8613800000000" />

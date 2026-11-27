@@ -1,4 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from base64 import b64encode
+from io import BytesIO
+import qrcode
 from telethon.errors import FloodWaitError, RPCError
 import logging
 import re
@@ -228,6 +231,34 @@ async def update_telegram_credentials(
         "authorized": request.app.state.telegram.connected,
         "message": "Telegram API credentials saved. Complete account login below.",
     }
+
+
+@router.post("/settings/telegram/qr/start")
+async def start_telegram_qr(request: Request):
+    try:
+        result = await request.app.state.telegram.start_qr_login()
+        image = qrcode.make(result["url"])
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        return {
+            "qr_image": "data:image/png;base64," + b64encode(buffer.getvalue()).decode("ascii"),
+            "expires_at": result["expires_at"],
+        }
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RPCError as exc:
+        rpc_message = str(getattr(exc, "message", "") or type(exc).__name__).upper()
+        safe_code = re.sub(r"[^A-Z0-9_]", "", rpc_message)[:80] or type(exc).__name__
+        logger.warning("Telegram QR login RPC error: %s (code=%s)", safe_code, getattr(exc, "code", None))
+        raise HTTPException(status_code=502, detail=f"Telegram QR login failed: {safe_code}.") from exc
+    except Exception as exc:
+        logger.exception("Unexpected Telegram QR login failure (type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=502, detail=f"Could not create Telegram QR login ({type(exc).__name__}).") from exc
+
+
+@router.get("/settings/telegram/qr/status")
+async def telegram_qr_status(request: Request):
+    return await request.app.state.telegram.qr_login_status()
 
 
 @router.post("/settings/telegram/send-code")

@@ -1,4 +1,6 @@
+import asyncio
 import os
+from datetime import timezone
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -16,6 +18,11 @@ class TelegramService:
         self.authorized = False
         self._login_phone: str | None = None
         self._phone_code_hash: str | None = None
+        self._qr_login: Any | None = None
+        self._qr_task: asyncio.Task | None = None
+        self._qr_status = "idle"
+        self._qr_error: str | None = None
+        self._qr_expires_at: str | None = None
 
     @property
     def configured(self) -> bool:
@@ -69,9 +76,74 @@ class TelegramService:
         return self.authorized
 
     async def disconnect(self) -> None:
+        qr_task = self._qr_task
+        if qr_task and qr_task is not asyncio.current_task() and not qr_task.done():
+            qr_task.cancel()
+            try:
+                await qr_task
+            except asyncio.CancelledError:
+                pass
+        self._qr_task = None
+        self._qr_login = None
+        self._qr_status = "idle"
         if self.client and self.client.is_connected():
             await self.client.disconnect()
         self.authorized = False
+
+    async def start_qr_login(self) -> dict[str, str]:
+        if not self.configured:
+            raise RuntimeError("Save Telegram API ID and API Hash first.")
+        client = self._ensure_client()
+        if not client.is_connected():
+            await client.connect()
+        if await client.is_user_authorized():
+            self.authorized = True
+            self._qr_status = "authorized"
+            raise RuntimeError("This Telegram session is already authorized.")
+        if self._qr_status == "waiting" and self._qr_task and not self._qr_task.done():
+            raise RuntimeError("A QR login is already waiting. Scan it or wait for it to expire.")
+        if self._qr_status == "needs_password":
+            raise RuntimeError("The QR code was accepted. Enter your Telegram two-step verification password.")
+        qr_login = await client.qr_login()
+        self._qr_login = qr_login
+        self._qr_status = "waiting"
+        self._qr_error = None
+        expires = qr_login.expires
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        self._qr_expires_at = expires.isoformat()
+        self._qr_task = asyncio.create_task(self._wait_for_qr_login(qr_login), name="telegram-qr-login")
+        return {"url": qr_login.url, "expires_at": self._qr_expires_at}
+
+    async def _wait_for_qr_login(self, qr_login: Any) -> None:
+        try:
+            await qr_login.wait()
+            self.authorized = bool(self.client and await self.client.is_user_authorized())
+            self._qr_status = "authorized" if self.authorized else "failed"
+            self._qr_error = None if self.authorized else "Telegram QR confirmation completed but the session is not authorized."
+            self._secure_session_file()
+        except SessionPasswordNeededError:
+            self._qr_status = "needs_password"
+        except asyncio.TimeoutError:
+            self._qr_status = "expired"
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self._qr_status = "failed"
+            self._qr_error = type(exc).__name__
+
+    async def qr_login_status(self) -> dict[str, Any]:
+        if self.client and self.client.is_connected():
+            self.authorized = await self.client.is_user_authorized()
+            if self.authorized:
+                self._qr_status = "authorized"
+        return {
+            "status": self._qr_status,
+            "authorized": self.authorized,
+            "needs_password": self._qr_status == "needs_password",
+            "expires_at": self._qr_expires_at,
+            "error": self._qr_error,
+        }
 
     async def send_login_code(self, phone: str) -> dict[str, Any]:
         if not self.configured:
@@ -146,6 +218,9 @@ class TelegramService:
         self._secure_session_file()
         self._login_phone = None
         self._phone_code_hash = None
+        if self.authorized:
+            self._qr_status = "authorized"
+            self._qr_error = None
         return self.authorized
 
     async def list_dialogs(self) -> list[dict[str, Any]]:

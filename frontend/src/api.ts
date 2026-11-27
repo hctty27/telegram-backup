@@ -40,6 +40,14 @@ export function createApi(token: string) {
         method: "PUT",
         body: JSON.stringify(payload)
       }),
+    startTelegramQr: () => request<{ qr_image: string; expires_at: string }>("/settings/telegram/qr/start", { method: "POST" }),
+    telegramQrStatus: () => request<{
+      status: "idle" | "waiting" | "needs_password" | "authorized" | "expired" | "failed";
+      authorized: boolean;
+      needs_password: boolean;
+      expires_at: string | null;
+      error: string | null;
+    }>("/settings/telegram/qr/status"),
     sendTelegramCode: (phone: string) =>
       request<{
         sent: boolean;
