@@ -6,7 +6,6 @@ import(
  "io"
  "net/http"
  "strconv"
- "strings"
 
  "github.com/go-chi/chi/v5"
  "github.com/hctty27/telegram-backup/internal/backup"
@@ -75,6 +74,8 @@ func(a *Actions)Routes(r chi.Router){
   if err!=nil||decode(w,r,&req)!=nil||req.Interval<60||req.Interval>86400{fail(w);return}
   remote,err:=strconv.ParseInt(req.RemoteID,10,64);if err!=nil||remote<=0{fail(w);return}
   tx,err:=a.Pool.Begin(r.Context());if err!=nil{fail(w);return};defer tx.Rollback(r.Context())
+  var chatLocked int64
+  if err=tx.QueryRow(r.Context(),"SELECT id FROM telegram_chats WHERE id=$1 FOR UPDATE",id).Scan(&chatLocked);err!=nil{fail(w);return}
   var existing int64
   err=tx.QueryRow(r.Context(),"SELECT remote_id FROM backup_policies WHERE chat_id=$1 FOR UPDATE",id).Scan(&existing)
   if err!=nil&&!errors.Is(err,pgx.ErrNoRows){fail(w);return}
@@ -96,5 +97,3 @@ func(a *Actions)Routes(r chi.Router){
  })
  r.Get("/capabilities",func(w http.ResponseWriter,r *http.Request){reply(w,map[string]any{"workers_enabled":true,"sync_mode":"polling","storage_config":"private rclone config"})})
 }
-// Keep secret-bearing input out of access logs.
-var _ = strings.TrimSpace
