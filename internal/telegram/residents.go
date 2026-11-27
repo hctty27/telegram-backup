@@ -53,6 +53,7 @@ func(r *Residents)get(id int64)(*resident,error){
  return c,nil
 }
 func(r *Residents)Do(ctx context.Context,id int64,fn func(context.Context,*gotd.Client)error)error{
+ if err:=r.service.checkBackoff(ctx,id);err!=nil{return err}
  c,err:=r.get(id);if err!=nil{return err}
  req:=request{ctx:ctx,fn:fn,result:make(chan error,1)}
  select{case c.requests<-req:case <-c.done:return errors.New("Telegram connection unavailable");case <-ctx.Done():return ctx.Err()}
@@ -90,7 +91,7 @@ func(r *Residents)run(ctx context.Context,id int64,c *resident){
  d.OnNewChannelMessage(func(ctx context.Context,_ tg.Entities,u *tg.UpdateNewChannelMessage)error{return deliver(ctx,u.Message)})
  // Single client owner; updates are delivered independently of serialized RPC
  // operations. Periodic history scans remain the durable gap-recovery path.
- _=r.service.Run(ctx,id,d,func(life context.Context,client *gotd.Client)error{
+ err:=r.service.Run(ctx,id,d,func(life context.Context,client *gotd.Client)error{
   status,err:=client.Auth().Status(life);if err!=nil{return err}
   if !status.Authorized{return errors.New("Telegram account not authorized")}
   for{
@@ -107,6 +108,7 @@ func(r *Residents)run(ctx context.Context,id int64,c *resident){
    }
   }
  })
+ _=err // Reconcile retries; never log potentially secret-bearing RPC errors.
 }
 // Reconcile periodically starts listeners for enabled accounts, even if no
 // backup task is currently running. Failed clients retry on the next tick.
@@ -121,4 +123,4 @@ func(r *Residents)Reconcile(ctx context.Context)error{
  for id:=range ids{_,_=r.get(id)}
  return nil
 }
-func(r *Residents)Wait(){r.wg.Wait()}
+func(r *Residents)Wait(){r.mu.Lock();r.mu.Unlock();r.wg.Wait()}
