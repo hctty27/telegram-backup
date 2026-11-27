@@ -23,7 +23,7 @@ func(sourceStub)ReadPage(_ context.Context,_ int64,_ tg.InputPeerClass,min,befor
  if min>=42{return tgservice.Page{Complete:true},nil}
  return tgservice.Page{Media:[]tgservice.Media{{MessageID:42,Date:time.Unix(1700000000,0),Key:"document:123",Name:"test.mp4",MIME:"video/mp4",Size:3}},First:42,Last:42,Count:1,Complete:true},nil
 }
-func(sourceStub)Fetch(_ context.Context,_ int64,_ tg.InputPeerClass,_ int,_ string,_ int64,w io.Writer)error{_,err:=io.WriteString(w,"abc");return err}
+func(sourceStub)Fetch(_ context.Context,_ int64,_ tg.InputPeerClass,_ int,_ string,_ int64,_ int64,w io.Writer)error{_,err:=io.WriteString(w,"abc");return err}
 type cloudStub struct{}
 func(cloudStub)TestRemote(context.Context,string)error{return nil}
 func(cloudStub)UploadVerified(_ context.Context,p,_,_ string)(storage.Verified,error){
