@@ -18,7 +18,7 @@ docker compose ps
 
 密钥初始化命令仅适用于首次安装；若 .env 已存在，不要覆盖，应保留原密钥。默认宿主机监听 0.0.0.0:8080，可通过服务器 IP 访问。通过 .env 中的 `TGB_BIND_ADDR` 和 `TGB_PORT` 自定义监听地址及宿主机端口；容器内部端口为 8080。公网访问请限制防火墙来源并使用可信 HTTPS 反向代理，避免明文传输管理令牌；仅代理访问时可将 TGB_BIND_ADDR 设为 127.0.0.1。使用 .env 中的管理令牌登录。保留并安全备份数据库、加密密钥和应用卷；不要运行 `docker compose down -v` 清理生产环境。
 
-1. 添加 Telegram API ID / Hash，扫码并完成可选的 2FA。
+1. 添加 Telegram API ID / Hash，选择二维码或国际区号手机号验证码登录，并完成可选的 2FA。Telegram 决定站内验证码、短信或电话渠道；不保证短信，官方客户端专属挑战及邮箱设置流程请改用扫码。验证码重发受 Telegram next_type/timeout 和本地次数限制，单次授权最长五分钟。请通过 HTTPS 或可信本地隧道输入敏感凭据。
 2. 配置 Google Drive。支持桌面 OAuth Token 导入；直接网页授权需自己的 Web OAuth Client、Drive API 和精确的 HTTPS 回调 `TGB_GOOGLE_REDIRECT_URI`。
 3. 刷新群组，选择目标云存储，启用策略。首次扫描历史，之后实时监听及增量补偿。
 4. 先用专门测试群验证文件内容、重启恢复和上传校验后本地清理，再扩大备份范围。

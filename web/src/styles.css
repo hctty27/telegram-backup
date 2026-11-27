@@ -16,8 +16,12 @@ button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.55}button:focu
 .admin-card textarea{width:100%;resize:vertical;overflow-wrap:anywhere}
 .admin-card label{min-width:0;max-width:100%}
 .admin-card [role=status]{overflow-wrap:anywhere}
-@media(max-width:767px){.admin-card input:not([type=checkbox]),.admin-card textarea,.admin-card select{width:100%;font-size:16px}.admin-card select{min-width:0}.admin-card .policy-form button{width:100%}.admin-card img{max-width:100%}}
+@media(max-width:1023px){.admin-card input:not([type=checkbox]),.admin-card textarea,.admin-card select{width:100%;font-size:16px}.admin-card select{min-width:0}.admin-card .policy-form button{width:100%}.admin-card img{max-width:100%}}
 
 @media(min-width:768px){.icon-button.md\\:hidden{display:none}}
 
 .login-qr{display:block;width:256px;max-width:100%;height:auto;aspect-ratio:1 / 1;object-fit:contain;image-rendering:pixelated;background:white;margin-inline:auto;border-radius:8px}
+
+.admin-card select{min-width:0;width:100%;max-width:100%}
+.admin-card form{min-width:0}
+.admin-card .login-qr{max-width:100%;width:256px;height:auto}

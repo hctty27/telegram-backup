@@ -49,17 +49,39 @@ func(a *Actions)Routes(r chi.Router){
  })
  r.Post("/accounts/{id}/qr",func(w http.ResponseWriter,r *http.Request){
   id,err:=idParam(r);if err!=nil{fail(w);return}
-  var exists bool
-  if a.Pool.QueryRow(r.Context(),"SELECT EXISTS(SELECT 1 FROM telegram_accounts WHERE id=$1)",id).Scan(&exists)!=nil||!exists{fail(w);return}
-  if a.Login.Start(id)!=nil{http.Error(w,"login already active",409);return}
+  if !a.accountExists(r.Context(),id){fail(w);return}
+  if a.Login.Start(id)!=nil{http.Error(w,"login unavailable or active",409);return}
   reply(w,a.Login.Status(id))
  })
- r.Get("/accounts/{id}/qr",func(w http.ResponseWriter,r *http.Request){
+ r.Post("/accounts/{id}/phone",func(w http.ResponseWriter,r *http.Request){
+  id,err:=idParam(r);var req struct{Phone string `json:"phone"`}
+  if err!=nil||decode(w,r,&req)!=nil||!a.accountExists(r.Context(),id){fail(w);return}
+  if a.Login.StartPhone(id,req.Phone)!=nil{http.Error(w,"invalid phone or login unavailable",409);return}
+  reply(w,a.Login.Status(id))
+ })
+ status:=func(w http.ResponseWriter,r *http.Request){
   id,err:=idParam(r);if err!=nil{fail(w);return};reply(w,a.Login.Status(id))
+ }
+ r.Get("/accounts/{id}/qr",status)
+ r.Get("/accounts/{id}/login",status)
+ r.Post("/accounts/{id}/code",func(w http.ResponseWriter,r *http.Request){
+  id,err:=idParam(r);var req struct{AttemptID string `json:"attempt_id"`;Code string `json:"code"`}
+  if err!=nil||decode(w,r,&req)!=nil||a.Login.Code(id,req.AttemptID,req.Code)!=nil{fail(w);return}
+  reply(w,a.Login.Status(id))
  })
  r.Post("/accounts/{id}/password",func(w http.ResponseWriter,r *http.Request){
-  id,err:=idParam(r);var req struct{Password string `json:"password"`}
-  if err!=nil||decode(w,r,&req)!=nil||a.Login.Password(id,req.Password)!=nil{fail(w);return}
+  id,err:=idParam(r);var req struct{AttemptID string `json:"attempt_id"`;Password string `json:"password"`}
+  if err!=nil||decode(w,r,&req)!=nil||a.Login.Password(id,req.AttemptID,req.Password)!=nil{fail(w);return}
+  reply(w,a.Login.Status(id))
+ })
+ r.Post("/accounts/{id}/resend",func(w http.ResponseWriter,r *http.Request){
+  id,err:=idParam(r);var req struct{AttemptID string `json:"attempt_id"`}
+  if err!=nil||decode(w,r,&req)!=nil||a.Login.Resend(id,req.AttemptID)!=nil{http.Error(w,"resend unavailable",409);return}
+  reply(w,a.Login.Status(id))
+ })
+ r.Post("/accounts/{id}/cancel",func(w http.ResponseWriter,r *http.Request){
+  id,err:=idParam(r);var req struct{AttemptID string `json:"attempt_id"`}
+  if err!=nil||decode(w,r,&req)!=nil||a.Login.Cancel(id,req.AttemptID)!=nil{http.Error(w,"no active login",409);return}
   reply(w,a.Login.Status(id))
  })
  r.Post("/accounts/{id}/chats",func(w http.ResponseWriter,r *http.Request){
@@ -124,4 +146,9 @@ func(a *Actions)Routes(r chi.Router){
   if tx.Commit(r.Context())!=nil{fail(w);return};reply(w,map[string]bool{"ok":true})
  })
  r.Get("/capabilities",func(w http.ResponseWriter,r *http.Request){reply(w,map[string]any{"workers_enabled":true,"sync_mode":"realtime+polling","storage_config":"encrypted Drive OAuth token","google_oauth":a.OAuth!=nil})})
+}
+
+func(a *Actions)accountExists(ctx context.Context,id int64)bool{
+ var exists bool
+ return a.Pool.QueryRow(ctx,"SELECT EXISTS(SELECT 1 FROM telegram_accounts WHERE id=$1)",id).Scan(&exists)==nil&&exists
 }
