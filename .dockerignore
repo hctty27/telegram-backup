@@ -1,0 +1,14 @@
+**/.git
+**/node_modules
+**/dist
+**/__pycache__
+data
+downloads
+rclone
+.env
+.env.*
+*.session
+*.session-journal
+*.db
+*.db-shm
+*.db-wal

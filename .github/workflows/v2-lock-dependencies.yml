@@ -1,0 +1,37 @@
+name: Resolve dependency locks (read-only)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: v2-lock-dependencies
+  cancel-in-progress: false
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.4'
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Resolve dependency locks without npm lifecycle scripts
+        run: |
+          go mod tidy
+          go mod verify
+          (cd web && npm install --package-lock-only --ignore-scripts --no-audit --no-fund)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: resolved-v2-locks
+          path: |
+            go.mod
+            go.sum
+            web/package-lock.json
+          if-no-files-found: error
+          retention-days: 7

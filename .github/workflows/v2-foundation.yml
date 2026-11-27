@@ -1,0 +1,137 @@
+name: V2 verification
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: telegram_backup_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      V2_DATABASE_URL: postgres://postgres:ci-only-password@127.0.0.1:5432/telegram_backup_test?sslmode=disable
+      V2_ADMIN_TOKEN: ci-only-test-token-not-for-production-12345
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.4'
+          cache: false
+      - name: Frontend install and typecheck/build
+        working-directory: web
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Resolve dependencies
+        run: |
+          go mod tidy -diff
+          go mod verify
+      - name: Compile and vet
+        run: go build ./... && go vet ./...
+      - name: Install actual rclone CLI for integration tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull rclone/rclone:1.76.0
+          cid=$(docker create rclone/rclone:1.76.0)
+          trap 'docker rm -f "$cid" >/dev/null' EXIT
+          docker cp "$cid:/usr/local/bin/rclone" /tmp/tgb-rclone
+          sudo install -m 0755 /tmp/tgb-rclone /usr/local/bin/rclone
+          rclone version | grep -Fx 'rclone v1.76.0'
+      - name: Unit and race tests
+        env:
+          V2_REQUIRE_RCLONE_TEST: 'true'
+        run: go test -race ./...
+      - name: PostgreSQL and River migrations
+        run: go run ./cmd/migrate && go run ./cmd/migrate
+      - name: Preview API smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          go build -o /tmp/tgb-v2 ./cmd/server
+          /tmp/tgb-v2 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8081/api/ready >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8081/api/health
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/api/v2/overview)" = 401
+          curl -fsS -H "Authorization: Bearer $V2_ADMIN_TOKEN" http://127.0.0.1:8081/api/v2/overview | jq -e '.accounts == 0 and .completed == 0'
+          curl -fsS http://127.0.0.1:8081/ | grep -q 'TelegramBackup V2'
+      - name: Durable backup pipeline integration test
+        env:
+          V2_INTEGRATION_DATABASE_URL: postgres://postgres:ci-only-password@127.0.0.1:5432/telegram_backup_test?sslmode=disable
+        run: go test -race ./internal/backup -run TestDurablePipeline -count=1 -v
+      - name: Save resolved dependency locks for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: v2-dependency-locks
+          path: |
+            go.mod
+            go.sum
+            web/package-lock.json
+      - name: Build V2 image
+        run: docker build -f Dockerfile -t telegram-backup-v2:ci .
+      - name: Fresh Compose worker startup smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          export V2_DB_PASSWORD=$(openssl rand -hex 32)
+          export V2_ADMIN_TOKEN=$(openssl rand -hex 32)
+          export V2_ENCRYPTION_KEY=$(openssl rand -hex 32)
+          trap 'docker compose down -v' EXIT
+          docker compose up -d --build --wait --wait-timeout 120
+          curl -fsS -H "Authorization: Bearer $V2_ADMIN_TOKEN" http://127.0.0.1:8081/api/v2/capabilities | jq -e '.workers_enabled == true'
+          curl -fsS -H "Authorization: Bearer $V2_ADMIN_TOKEN" http://127.0.0.1:8081/api/v2/monitor | jq -e '.disk.quota_bytes > 0'
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.4'
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Resolve or validate dependency manifests
+        run: |
+          go mod tidy -diff
+          go mod verify
+          (cd web && npm ci --ignore-scripts --no-audit --no-fund)
+      - name: Scan Go reachable vulnerabilities
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.10.0
+          "$(go env GOPATH)/bin/govulncheck" -show verbose ./...
+      - name: Audit npm production and build dependencies
+        if: always()
+        working-directory: web
+        run: npm audit --audit-level=high

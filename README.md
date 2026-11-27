@@ -1,61 +1,46 @@
-# TelegramBackup
+# TelegramBackup V2
 
-Self-hosted Telegram media backup with a web dashboard.
+Go 自托管 Telegram 媒体备份服务。使用 gotd、PostgreSQL、River、React 19、Tailwind CSS 4 和 rclone。支持用户账号扫码授权、历史及增量扫描、实时消息监听、持久化差量恢复、断点续传、磁盘配额、Google Drive 加密配置及上传验证后清理。
 
-TelegramBackup uses a Telegram user account through Telethon to scan chats available to that account, download photos, videos and documents, then upload them to cloud storage through rclone.
+**当前为发布候选开发分支，真实 Telegram / Google Drive 联调及最终 CI 尚未完成。不是正式发布版本。** 仅备份账号有权访问的会话。全新安装，不支持旧 Python 版本迁移。
 
-## Stack
+## 部署（待 CI 通过后测试）
 
-- Backend: Python 3.12, FastAPI, Telethon, SQLAlchemy async, SQLite
-- Frontend: React, TypeScript, Vite, Ant Design
-- Storage: rclone
-- Deployment: Docker Compose
+Linux Docker Engine + Docker Compose v2。单应用实例，数据库不对外暴露。
 
-## Quick start
+```sh
+umask 077
+(set -C; printf 'V2_DB_PASSWORD=%s\nV2_ADMIN_TOKEN=%s\nV2_ENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > .env)
+docker compose up -d --build
+docker compose ps
+```
 
-1. Clone the repository and copy `.env.example` to `.env`.
-2. Generate an application encryption key:
+密钥初始化命令仅适用于首次安装；若 .env 已存在，不要覆盖，应保留原密钥。默认宿主机监听 127.0.0.1:8081。通过 SSH 隧道或可信 HTTPS 反向代理访问；不要直接公开 HTTP。使用 .env 中的管理令牌登录。保留并安全备份数据库、加密密钥和应用卷；不要运行 `docker compose down -v` 清理生产环境。
 
-   ```bash
-   python3 -c "import base64,os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
-   ```
+1. 添加 Telegram API ID / Hash，扫码并完成可选的 2FA。
+2. 配置 Google Drive。支持桌面 OAuth Token 导入；直接网页授权需自己的 Web OAuth Client、Drive API 和精确的 HTTPS 回调 `V2_GOOGLE_REDIRECT_URI`。
+3. 刷新群组，选择目标云存储，启用策略。首次扫描历史，之后实时监听及增量补偿。
+4. 先用专门测试群验证文件内容、重启恢复和上传校验后本地清理，再扩大备份范围。
 
-   Put the generated value in `APP_ENCRYPTION_KEY`. Keep it safe: without this key, encrypted Telegram and cloud-storage credentials cannot be read.
-3. Set a strong `ADMIN_TOKEN` in `.env`.
-4. Build and start the service:
+默认下载缓存 10 GiB，最小剩余磁盘空间 5 GiB；在 .env 中设置 V2_CACHE_GIB / V2_MIN_FREE_GIB 后重建应用容器生效。实际磁盘可能被其他服务消耗。当前同账号 RPC 串行，同云存储操作串行；不是无限并发系统。超出缓存额度或大小未知的媒体会标记受限。
 
-   ```bash
-   docker compose build
-   docker compose up -d
-   ```
-5. Open `http://localhost:8080` and sign in with `ADMIN_TOKEN`.
-6. In **Settings → Telegram**, enter the API ID and API Hash from https://my.telegram.org, save them, then complete phone-code and optional 2FA login in the dashboard.
-7. In **Settings → Cloud storage**, add a Google Drive remote. Use the OAuth Client ID and Client Secret from Google Cloud and paste the complete JSON token output from `rclone authorize`. The token JSON must contain a `refresh_token`.
-8. Test the connection, select the default destination and save.
-9. In **Settings → Backup policy**, set the automatic scan interval.
+## 开发及验收
 
-## Existing rclone configuration
+- [V2 架构](docs/V2-ARCHITECTURE.md)
+- [安装、限制和验证状态](docs/V2-STATUS.md)
+- [Telegram 独立联调工具](docs/V2-PROBE.md)
 
-If `./rclone/rclone.conf` exists, TelegramBackup imports its remotes into the encrypted application database on the first Settings request when `APP_ENCRYPTION_KEY` is configured. The original file is not deleted. After verifying the imported remote works, keep the old file protected or remove it manually if no other service needs it.
+Go 1.27.4 / Node 22；CI 执行前端构建、Go build/vet/race、数据库迁移、模拟备份集成、Docker 和全新 Compose 启动检查。依赖锁文件已入库并包含最新针对性安全修复；最终 CI、安全扫描及真实服务验收仍待确认。
 
-## Security
+```sh
+(cd web && npm ci && npm run build)
+go mod tidy -diff
+go mod verify
+go build ./...
+go vet ./...
+go test -race ./...
+```
 
-- Never commit `.env`, Telegram session files, rclone config files, OAuth tokens, or downloaded media.
-- The application encrypts Telegram API Hash and the complete rclone configuration in the database using Fernet and `APP_ENCRYPTION_KEY`.
-- Telegram session files remain in the private persistent `./data` volume. Anyone who obtains a Telethon session can access the Telegram account, so protect the volume and backups.
-- Do not change `APP_ENCRYPTION_KEY` after saving credentials unless you first decrypt and re-encrypt the stored settings.
-- Put the dashboard behind HTTPS and restrict public access with an IP allowlist or VPN.
+### 更新依赖
 
-## Development
-
-Backend: install `backend/requirements.txt` and run `uvicorn app.main:app --reload` from `backend/`.
-
-Frontend: run `npm install` and `npm run dev` from `frontend/`.
-
-## Project status
-
-The dashboard supports Telegram API configuration and phone-code / 2FA login, Google Drive remote creation from OAuth token JSON, existing rclone remote import, storage connection testing, default destination selection, and persistent backup scan interval settings. Run an end-to-end test with a dedicated Telegram chat before enabling large archives.
-
-## Operations dashboard
-
-The archive page queries successfully uploaded database records, with pagination, filename search, chat/type filters and copyable remote paths. It is an index, not a live cloud file browser. The monitor displays the current file's transfer progress using Telethon callbacks and rclone JSON statistics, plus the most recent 200 structured events in memory. Events reset on restart; task history remains in SQLite. Media streaming, file deletion, QR login and quota visualization are not part of this iteration.
+更新 Go 依赖后执行 `go mod tidy`，更新前端依赖后在 `web` 中执行 `npm install --package-lock-only --ignore-scripts`。将依赖声明与对应锁文件放入同一个 PR，复核后再运行完整 CI。依赖锁生成工作流仅提供只读构建产物，不再自动写入分支。不要为了通过测试关闭漏洞扫描或手工伪造校验值。
