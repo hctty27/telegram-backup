@@ -2,6 +2,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -12,8 +13,16 @@ permissions:
   contents: read
 jobs:
   verify:
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:18
@@ -90,13 +99,16 @@ jobs:
       - name: Save resolved dependency locks for review
         uses: actions/upload-artifact@v4
         with:
-          name: dependency-locks
+          name: dependency-locks-${{ matrix.arch }}
           path: |
             go.mod
             go.sum
             web/package-lock.json
       - name: Build application image
-        run: docker build -f Dockerfile -t telegram-backup:ci .
+        run: |
+          docker build -f Dockerfile -t telegram-backup:ci \
+            --label org.opencontainers.image.source=https://github.com/hctty27/telegram-backup \
+            --label org.opencontainers.image.revision=${{ github.sha }} .
       - name: Fresh Compose worker startup smoke test
         shell: bash
         run: |
@@ -105,9 +117,21 @@ jobs:
           export TGB_ADMIN_TOKEN=$(openssl rand -hex 32)
           export TGB_ENCRYPTION_KEY=$(openssl rand -hex 32)
           trap 'docker compose down -v' EXIT
-          docker compose up -d --build --wait --wait-timeout 120
+          export TGB_IMAGE=telegram-backup:ci
+          export TGB_BIND_ADDR=127.0.0.1
+          docker compose up -d --no-build --pull missing --wait --wait-timeout 120
           curl -fsS -H "Authorization: Bearer $TGB_ADMIN_TOKEN" http://127.0.0.1:8080/api/capabilities | jq -e '.workers_enabled == true'
           curl -fsS -H "Authorization: Bearer $TGB_ADMIN_TOKEN" http://127.0.0.1:8080/api/monitor | jq -e '.disk.quota_bytes > 0'
+      - name: Export verified application image
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        run: docker save telegram-backup:ci | gzip -1 > image-${{ matrix.arch }}.tar.gz
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        with:
+          name: verified-image-${{ matrix.arch }}
+          path: image-${{ matrix.arch }}.tar.gz
+          retention-days: 1
+          if-no-files-found: error
   security:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -135,3 +159,50 @@ jobs:
         if: always()
         working-directory: web
         run: npm audit --audit-level=high
+  publish:
+    needs: [verify, security]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/hctty27/telegram-backup
+      GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REF: ${{ github.ref }}
+      SHA: ${{ github.sha }}
+      BUILD_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: verified-image-*
+          path: images
+          merge-multiple: true
+      - name: Publish verified images and multi-platform manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$REF" != refs/heads/main && ! "$REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Only stable semantic-version tags are published" >&2
+            exit 1
+          fi
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          trap 'docker logout ghcr.io >/dev/null' EXIT
+          for arch in amd64 arm64; do
+            gzip -dc "images/image-$arch.tar.gz" | docker load
+            test "$(docker image inspect telegram-backup:ci --format '{{.Architecture}}')" = "$arch"
+            test "$(docker image inspect telegram-backup:ci --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$SHA"
+            tag="$IMAGE:build-$BUILD_ID-$arch"
+            docker tag telegram-backup:ci "$tag"
+            docker push "$tag"
+            docker image rm telegram-backup:ci "$tag"
+          done
+          tags=(-t "$IMAGE:sha-$SHA")
+          if [[ "$REF" == refs/heads/main ]]; then
+            tags+=(-t "$IMAGE:latest")
+          else
+            tags+=(-t "$IMAGE:${REF#refs/tags/}")
+          fi
+          docker buildx imagetools create "${tags[@]}" "$IMAGE:build-$BUILD_ID-amd64" "$IMAGE:build-$BUILD_ID-arm64"
+          docker buildx imagetools inspect "$IMAGE:sha-$SHA"

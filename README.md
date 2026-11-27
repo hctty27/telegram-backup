@@ -11,7 +11,8 @@ Linux Docker Engine + Docker Compose v2。单应用实例，数据库不对外�
 ```sh
 umask 077
 (set -C; printf 'TGB_DB_PASSWORD=%s\nTGB_ADMIN_TOKEN=%s\nTGB_ENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > .env)
-docker compose up -d --build
+docker compose pull
+docker compose up -d --no-build
 docker compose ps
 ```
 
@@ -23,6 +24,30 @@ docker compose ps
 4. 先用专门测试群验证文件内容、重启恢复和上传校验后本地清理，再扩大备份范围。
 
 默认下载缓存 10 GiB，最小剩余磁盘空间 5 GiB；在 .env 中设置 TGB_CACHE_GIB / TGB_MIN_FREE_GIB 后重建应用容器生效。实际磁盘可能被其他服务消耗。当前同账号 RPC 串行，同云存储操作串行；不是无限并发系统。超出缓存额度或大小未知的媒体会标记受限。
+
+## 更新与源码构建
+
+默认使用 `ghcr.io/hctty27/telegram-backup:latest`，无需在服务器编译。先确认 [Actions](https://github.com/hctty27/telegram-backup/actions) 发布任务通过。首次创建的 GHCR 包可能是私有的，仓库管理员需要在 Package settings 将其设为 Public 才能匿名拉取；私有部署可使用具备 read:packages 的凭据执行 docker login ghcr.io。不要提交令牌。
+
+已有部署更新（保留 .env 与数据卷）：
+
+```sh
+git pull --ff-only origin main
+docker compose pull
+docker compose up -d --no-build
+docker compose ps
+```
+
+CI 对 linux/amd64 和 linux/arm64 分别构建并验证实际镜像，安全扫描通过后才发布。main 推送更新 latest，稳定版本标签推送发布对应版本，均带完整 sha 标签。可设置 TGB_IMAGE 为指定标签或 digest 以固定版本。发布失败时不应假定最新镜像已可用。
+
+开发者需要从源码构建时：
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.build.yml build app
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --no-build --pull never
+```
+
+上述源码启动要求 PostgreSQL 基础镜像已在本机（首次先执行 `docker compose pull postgres`）。BuildKit 缓存 npm、Go modules 和 Go 编译产物。
 
 ## 开发及验收
 

@@ -1,0 +1,14 @@
+# Explicit opt-in source build; production Compose only pulls images.
+services:
+  migrate:
+    image: telegram-backup:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    pull_policy: never
+  app:
+    image: telegram-backup:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    pull_policy: never

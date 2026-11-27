@@ -15,9 +15,7 @@ services:
       timeout: 3s
       retries: 20
   migrate:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${TGB_IMAGE:-ghcr.io/hctty27/telegram-backup:latest}
     command: ["migrate"]
     environment:
       TGB_DATABASE_URL: postgres://telegram_backup:${TGB_DB_PASSWORD}@postgres:5432/telegram_backup?sslmode=disable
@@ -26,9 +24,7 @@ services:
         condition: service_healthy
     restart: "no"
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${TGB_IMAGE:-ghcr.io/hctty27/telegram-backup:latest}
     environment:
       TGB_DATABASE_URL: postgres://telegram_backup:${TGB_DB_PASSWORD}@postgres:5432/telegram_backup?sslmode=disable
       TGB_ADMIN_TOKEN: ${TGB_ADMIN_TOKEN:?set TGB_ADMIN_TOKEN}

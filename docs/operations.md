@@ -4,6 +4,7 @@
 
 首次安装按 [README](../README.md) 生成独立密钥。不要覆盖已存在的 .env 或删除生产数据卷。默认宿主机地址 0.0.0.0:8080，单应用实例。
 
+- TGB_IMAGE：应用与迁移容器共用的镜像，默认 ghcr.io/hctty27/telegram-backup:latest；可用固定 tag 或 digest。
 - TGB_BIND_ADDR：宿主机监听地址（默认 0.0.0.0，可设为 127.0.0.1 限制本机访问）。
 - TGB_PORT：宿主机监听端口（默认 8080）。公网访问应使用防火墙限制来源及 HTTPS 代理。
 - TGB_DB_PASSWORD：数据库密码（推荐随机十六进制）。
