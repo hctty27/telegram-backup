@@ -5,12 +5,17 @@ import(
  "errors"
  "fmt"
  "sync"
+ "time"
+ "github.com/gotd/td/tgerr"
 
  gotd "github.com/gotd/td/telegram"
  "github.com/gotd/td/tg"
  "github.com/hctty27/telegram-backup/internal/security"
  "github.com/jackc/pgx/v5/pgxpool"
 )
+
+type BackoffError struct{ Wait time.Duration }
+func(e *BackoffError)Error()string{return "Telegram rate limit active"}
 
 type Service struct{
  Pool *pgxpool.Pool
@@ -44,11 +49,20 @@ func(s *Service)Run(ctx context.Context,id int64,updates gotd.UpdateHandler,fn f
  select{case g<-struct{}{}:defer func(){<-g}();case <-ctx.Done():return ctx.Err()}
  var appID int
  var enc []byte
- if err:=s.Pool.QueryRow(ctx,"SELECT api_id,api_hash_ciphertext FROM telegram_accounts WHERE id=$1",id).Scan(&appID,&enc);err!=nil{return err}
+ var waitSeconds float64
+ if err:=s.Pool.QueryRow(ctx,"SELECT api_id,api_hash_ciphertext,CASE WHEN flood_wait_until>now() THEN extract(epoch FROM flood_wait_until-now())::float8 ELSE 0 END FROM telegram_accounts WHERE id=$1",id).Scan(&appID,&enc,&waitSeconds);err!=nil{return err}
+ if waitSeconds>0{return &BackoffError{Wait:time.Duration(waitSeconds*float64(time.Second))+time.Second}}
  secret,err:=s.Box.Open(fmt.Sprintf("telegram-api:%d:v1",id),enc);if err!=nil{return err}
  defer clear(secret)
  client:=gotd.NewClient(appID,string(secret),gotd.Options{UpdateHandler:updates,NoUpdates:updates==nil,SessionStorage:&SessionStore{Pool:s.Pool,Box:s.Box,AccountID:id}})
- return client.Run(ctx,func(ctx context.Context)error{return fn(ctx,client)})
+ err=client.Run(ctx,func(ctx context.Context)error{return fn(ctx,client)})
+ if wait,ok:=tgerr.AsFloodWait(err);ok{
+  wait=max(wait,time.Second)+time.Second
+  save,cancel:=context.WithTimeout(context.Background(),3*time.Second);defer cancel()
+  if _,dbErr:=s.Pool.Exec(save,"UPDATE telegram_accounts SET flood_wait_until=greatest(flood_wait_until,now()+make_interval(secs=>$2)) WHERE id=$1",id,wait.Seconds());dbErr!=nil{return dbErr}
+  return &BackoffError{Wait:wait}
+ }
+ return err
 }
 func(s *Service)Authorized(ctx context.Context,id int64,fn func(context.Context,*gotd.Client)error)error{
  return s.Run(ctx,id,nil,func(ctx context.Context,c *gotd.Client)error{
