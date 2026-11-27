@@ -12,7 +12,7 @@ const pages=[{key:"overview",label:"总览",icon:LayoutDashboard},{key:"accounts
 type Page=typeof pages[number]["key"]
 type Overview={accounts:number;chats:number;completed:number;active:number;failed:number;staged_bytes:number;verified_bytes:number}
 type Row=Record<string,string|number|boolean|null>
-const columns:Record<Exclude<Page,"overview">,[string,string][]>={accounts:[["id","ID"],["display_name","账号"],["enabled","启用"],["created_at","创建时间"]],chats:[["id","ID"],["title","群组名称"],["peer_kind","类型"],["enabled","启用"]],tasks:[["filename","文件"],["state","状态"],["expected_bytes","大小"],["last_error","错误"],["updated_at","更新时间"]],archive:[["filename","文件"],["state","状态"],["expected_bytes","大小"],["updated_at","更新时间"]],storage:[["name","存储名称"],["kind","类型"],["enabled","启用"]]}
+const columns:Record<Exclude<Page,"overview">,[string,string][]>={accounts:[["id","ID"],["display_name","账号"],["enabled","启用"],["created_at","创建时间"]],chats:[["id","ID"],["title","群组名称"],["peer_kind","类型"],["enabled","启用"]],tasks:[["filename","文件"],["state","状态"],["expected_bytes","大小"],["queue_state","队列状态"],["attempt","尝试次数"],["last_error","错误"],["updated_at","更新时间"]],archive:[["filename","文件"],["state","状态"],["expected_bytes","大小"],["updated_at","更新时间"]],storage:[["name","存储名称"],["kind","类型"],["enabled","启用"]]}
 function bytes(n:number){if(!Number.isFinite(n)||n<0)return "—";if(n===0)return "0 B";const unit=["B","KiB","MiB","GiB","TiB"];const i=Math.min(4,Math.floor(Math.log(n)/Math.log(1024)));return (n/1024**i).toFixed(i?1:0)+" "+unit[i]}
 async function load<T,>(page:Page,token:string,signal:AbortSignal):Promise<T>{
  const res=await fetch("/api/v2/"+page,{headers:{Authorization:"Bearer "+token},signal,cache:"no-store"})
