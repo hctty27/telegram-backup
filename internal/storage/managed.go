@@ -25,13 +25,17 @@ type DriveConfig struct {
  RootFolderID string `json:"root_folder_id"`
 }
 var safeCredential=regexp.MustCompile("^[A-Za-z0-9_.-]+$")
-func driveINI(c DriveConfig)([]byte,error){
+func ValidateDriveCredentials(c DriveConfig)error{
  if !remoteName.MatchString(c.Name)||len(c.ClientID)>256||len(c.ClientSecret)>256||
  !safeCredential.MatchString(c.ClientID)||!strings.HasSuffix(c.ClientID,".apps.googleusercontent.com")||
  !safeCredential.MatchString(c.ClientSecret)||
  (c.RootFolderID!=""&&(!safeCredential.MatchString(c.RootFolderID)||len(c.RootFolderID)>256)){
-  return nil,errors.New("invalid Drive configuration")
+  return errors.New("invalid Drive configuration")
  }
+ return nil
+}
+func driveINI(c DriveConfig)([]byte,error){
+ if err:=ValidateDriveCredentials(c);err!=nil{return nil,err}
  if len(c.Token)>32<<10{return nil,errors.New("token too large")}
  var token struct{
   AccessToken string `json:"access_token"`
