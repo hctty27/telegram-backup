@@ -1,36 +1,59 @@
+name: telegram-backup-v2
 services:
-  backend:
-    build:
-      context: ./backend
-    container_name: telegram-backup-api
+  postgres:
+    image: postgres:18
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
-      DATA_DIR: /app/data
-      DOWNLOAD_DIR: /app/data/downloads
-      TELEGRAM_SESSION: /app/data/telegram
-      DATABASE_URL: sqlite+aiosqlite:////app/data/telegram_backup.db
-      RCLONE_CONFIG: /config/rclone/rclone.conf
+      POSTGRES_DB: telegram_backup_v2
+      POSTGRES_USER: telegram_backup
+      POSTGRES_PASSWORD: ${V2_DB_PASSWORD:?set V2_DB_PASSWORD}
     volumes:
-      - ./data:/app/data
-      - ./rclone:/config/rclone
-    expose:
-      - "8000"
+      - postgres_v2:/var/lib/postgresql
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      test: ["CMD-SHELL","pg_isready -U telegram_backup -d telegram_backup_v2"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["migrate"]
+    environment:
+      V2_DATABASE_URL: postgres://telegram_backup:${V2_DB_PASSWORD}@postgres:5432/telegram_backup_v2?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      V2_DATABASE_URL: postgres://telegram_backup:${V2_DB_PASSWORD}@postgres:5432/telegram_backup_v2?sslmode=disable
+      V2_ADMIN_TOKEN: ${V2_ADMIN_TOKEN:?set V2_ADMIN_TOKEN}
+      V2_ENCRYPTION_KEY: ${V2_ENCRYPTION_KEY:?set V2_ENCRYPTION_KEY}
+      V2_ENABLE_WORKERS: ${V2_ENABLE_WORKERS:-true}
+      V2_CACHE_GIB: ${V2_CACHE_GIB:-10}
+      V2_MIN_FREE_GIB: ${V2_MIN_FREE_GIB:-5}
+      V2_GOOGLE_REDIRECT_URI: ${V2_GOOGLE_REDIRECT_URI:-}
+    ports:
+      - "127.0.0.1:8081:8081"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD", "server", "-healthcheck"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 20s
-
-  frontend:
-    build:
-      context: ./frontend
-    container_name: telegram-backup-web
-    restart: unless-stopped
-    depends_on:
-      backend:
-        condition: service_healthy
-    ports:
-      - "8080:80"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    volumes:
+      - app_v2:/var/lib/telegram-backup-v2
+volumes:
+  postgres_v2:
+  app_v2:

@@ -1,9 +1,13 @@
 name: V2 verification
 on:
   push:
-    branches: [v2-rewrite]
+    branches: [main]
   pull_request:
-    branches: [main, v2-rewrite]
+    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -76,4 +80,15 @@ jobs:
             go.sum
             web/package-lock.json
       - name: Build V2 image
-        run: docker build -f Dockerfile.v2 -t telegram-backup-v2:ci .
+        run: docker build -f Dockerfile -t telegram-backup-v2:ci .
+      - name: Fresh Compose worker startup smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          export V2_DB_PASSWORD=$(openssl rand -hex 32)
+          export V2_ADMIN_TOKEN=$(openssl rand -hex 32)
+          export V2_ENCRYPTION_KEY=$(openssl rand -hex 32)
+          trap 'docker compose down -v' EXIT
+          docker compose up -d --build --wait --wait-timeout 120
+          curl -fsS -H "Authorization: Bearer $V2_ADMIN_TOKEN" http://127.0.0.1:8081/api/v2/capabilities | jq -e '.workers_enabled == true'
+          curl -fsS -H "Authorization: Bearer $V2_ADMIN_TOKEN" http://127.0.0.1:8081/api/v2/monitor | jq -e '.disk.quota_bytes > 0'

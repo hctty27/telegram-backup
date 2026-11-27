@@ -1,4 +1,4 @@
-# V2 preview only; the legacy Dockerfile and services remain unchanged.
+# TelegramBackup Go application, with embedded frontend.
 FROM node:22-bookworm-slim AS frontend
 WORKDIR /src/web
 COPY web/package.json ./

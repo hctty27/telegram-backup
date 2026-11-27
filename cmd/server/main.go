@@ -26,6 +26,12 @@ import (
 )
 
 func main(){
+ if len(os.Args)==2&&os.Args[1]=="-healthcheck"{
+  c:=&http.Client{Timeout:3*time.Second}
+  resp,err:=c.Get("http://127.0.0.1:8081/api/ready")
+  if err!=nil{os.Exit(1)}
+  resp.Body.Close();if resp.StatusCode!=http.StatusNoContent{os.Exit(1)};return
+ }
  if err:=run();err!=nil{slog.Error("server stopped","type","configuration or runtime failure");os.Exit(1)}
 }
 func run()error{
@@ -54,6 +60,21 @@ func run()error{
    var acquired bool
    if err=owner.QueryRow(ctx,"SELECT pg_try_advisory_lock(7427611001)").Scan(&acquired);err!=nil||!acquired{return errors.New("another database worker owner exists")}
    defer func(){c,cancel:=context.WithTimeout(context.Background(),3*time.Second);defer cancel();_,_=owner.Exec(c,"SELECT pg_advisory_unlock(7427611001)") }()
+   // Cancel all application work if the dedicated lock connection is lost.
+   watchCtx,cancelWatch:=context.WithCancel(ctx)
+   watchDone:=make(chan struct{})
+   go func(){
+    defer close(watchDone)
+    ticker:=time.NewTicker(5*time.Second);defer ticker.Stop()
+    for{select{
+    case <-watchCtx.Done():return
+    case <-ticker.C:
+     check,cancel:=context.WithTimeout(watchCtx,3*time.Second)
+     err:=owner.Conn().Ping(check);cancel()
+     if err!=nil{if watchCtx.Err()==nil{slog.Error("database worker ownership connection lost");stop()};return}
+    }}
+   }()
+   defer func(){cancelWatch();<-watchDone}()
    if err=clearPartials(stage);err!=nil{return err}
    quotaBytes,err:=gibSetting("V2_CACHE_GIB",10);if err!=nil{return err}
    reserveBytes,err:=gibSetting("V2_MIN_FREE_GIB",5);if err!=nil{return err}
@@ -76,12 +97,16 @@ func run()error{
    if actions.OAuth!=nil{handler=actions.OAuth.Wrap(handler)}
    if err=jobs.Start(ctx);err!=nil{return err}
    defer func(){c,cancel:=context.WithTimeout(context.Background(),20*time.Second);defer cancel();_=jobs.Stop(c)}()
+   schedulerCtx,cancelScheduler:=context.WithCancel(ctx)
+   schedulerDone:=make(chan struct{})
+   defer func(){cancelScheduler();<-schedulerDone}()
    go func(){
+    defer close(schedulerDone)
     ticker:=time.NewTicker(15*time.Second);defer ticker.Stop()
     for{
-     if err:=residents.Reconcile(residentCtx);err!=nil&&residentCtx.Err()==nil{slog.Warn("Telegram connection reconciliation failed")}
-     if err:=engine.Schedule(ctx);err!=nil&&ctx.Err()==nil{slog.Warn("backup scheduling failed","type","database or queue error")}
-     select{case <-ctx.Done():return;case <-ticker.C:}
+     if err:=residents.Reconcile(schedulerCtx);err!=nil&&residentCtx.Err()==nil{slog.Warn("Telegram connection reconciliation failed")}
+     if err:=engine.Schedule(schedulerCtx);err!=nil&&ctx.Err()==nil{slog.Warn("backup scheduling failed","type","database or queue error")}
+     select{case <-schedulerCtx.Done():return;case <-ticker.C:}
     }
    }()
    slog.Info("V2 realtime and polling backup engine enabled")

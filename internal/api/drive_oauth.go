@@ -58,6 +58,8 @@ func(o *DriveOAuth)start(w http.ResponseWriter,r *http.Request){
  if len(o.pending)>=16{o.mu.Unlock();http.Error(w,"too many pending authorizations",429);return}
  o.pending[state]=oauthAttempt{config:cfg,verifier:verifier,expires:time.Now().Add(10*time.Minute)}
  o.mu.Unlock()
+ // Remove unused secret-bearing attempts even when no new request arrives.
+ time.AfterFunc(10*time.Minute,func(){o.mu.Lock();delete(o.pending,state);o.mu.Unlock()})
  o.cookie(w,state,600)
  sum:=sha256.Sum256([]byte(verifier))
  q:=url.Values{"client_id":{cfg.ClientID},"redirect_uri":{o.redirect},"response_type":{"code"},"scope":{driveScope},"access_type":{"offline"},"prompt":{"consent"},"state":{state},"code_challenge":{base64.RawURLEncoding.EncodeToString(sum[:])},"code_challenge_method":{"S256"}}
@@ -87,7 +89,7 @@ func(o *DriveOAuth)callback(w http.ResponseWriter,r *http.Request){
  token,err:=o.exchange(ctx,a,code)
  if err!=nil{http.Error(w,"Google token exchange failed. Check the OAuth client and callback settings.",400);return}
  a.config.Token=token
- if o.managed.CreateDrive(ctx,a.config)!=nil{http.Error(w,"Drive connection or storage registration failed. Check the remote name and permissions.",400);return}
+ if o.managed==nil||o.managed.CreateDrive(ctx,a.config)!=nil{http.Error(w,"Drive connection or storage registration failed. Check the remote name and permissions.",400);return}
  _,_=io.WriteString(w,"Google Drive connected successfully. Return to TelegramBackup and refresh the cloud storage list.")
 }
 func(o *DriveOAuth)exchange(ctx context.Context,a oauthAttempt,code string)(string,error){

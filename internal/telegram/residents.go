@@ -96,7 +96,7 @@ func(r *Residents)run(ctx context.Context,id int64,c *resident){
   _,_=r.service.Pool.Exec(call,`UPDATE sync_checkpoints s SET next_scan_at=now() FROM telegram_chats c WHERE c.id=s.chat_id AND c.account_id=$1 AND c.enabled`,id)
  }
  gaps:=updates.New(updates.Config{Handler:d,Storage:store,AccessHasher:store,UserAccessHasher:store,StopOnApplyError:true,BeforeRun:updates.BeforeRunBuffer,MaxChannelDifferenceConcurrency:2,OnTooLong:rescan,OnLoadUserStateFailed:rescan,OnChannelTooLong:func(int64){rescan()},OnLoadChannelStateFailed:func(int64){rescan()}})
- err:=r.service.Run(ctx,id,gaps,func(life context.Context,client *gotd.Client)error{
+ err:=r.service.Run(ctx,id,gaps,func(life context.Context,client *gotd.Client)(result error){
   status,err:=client.Auth().Status(life);if err!=nil{return err}
   if !status.Authorized{return errors.New("Telegram account not authorized")}
   self,err:=client.Self(life);if err!=nil{return err}
@@ -106,7 +106,7 @@ func(r *Residents)run(ctx context.Context,id int64,c *resident){
   life,cancelLife:=context.WithCancel(life)
   gapDone:=make(chan error,1)
   go func(){err:=gaps.Run(life,client.API(),self.ID,updates.AuthOptions{});gapDone<-err;cancelLife()}()
-  defer func(){cancelLife();<-gapDone}()
+  defer func(){cancelLife();if gapErr:=<-gapDone;gapErr!=nil&&!errors.Is(gapErr,context.Canceled){result=gapErr}}()
   for{
    select{
    case <-life.Done():return life.Err()

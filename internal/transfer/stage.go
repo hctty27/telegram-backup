@@ -48,8 +48,8 @@ func CleanupVerified(root string,id int64,storedPath string)error{
  actual,err:=filepath.Abs(storedPath);if err!=nil{return err}
  if actual!=filepath.Join(root,fmt.Sprintf("%d.media",id)){return errors.New("staging path mismatch")}
  info,err:=os.Lstat(actual)
- if errors.Is(err,os.ErrNotExist){return nil}
+ if errors.Is(err,os.ErrNotExist){return syncDirectory(root)}
  if err!=nil{return err}
  if !info.Mode().IsRegular(){return errors.New("refusing nonregular staging path")}
- err=os.Remove(actual);if errors.Is(err,os.ErrNotExist){return nil};return err
+ err=os.Remove(actual);if err!=nil&&!errors.Is(err,os.ErrNotExist){return err};return syncDirectory(root)
 }
