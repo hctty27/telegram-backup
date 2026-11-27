@@ -4,7 +4,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: v2-lock-dependencies
+  group: dependency-locks
   cancel-in-progress: false
 jobs:
   resolve:
@@ -28,7 +28,7 @@ jobs:
           (cd web && npm install --package-lock-only --ignore-scripts --no-audit --no-fund)
       - uses: actions/upload-artifact@v4
         with:
-          name: resolved-v2-locks
+          name: resolved-locks
           path: |
             go.mod
             go.sum

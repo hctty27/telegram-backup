@@ -15,7 +15,7 @@ func TestPreviewAuthentication(t *testing.T){
  if _,err:=NewDashboardRouter(pool,"short",assets);err==nil{t.Fatal("accepted short token")}
  r,err:=NewDashboardRouter(pool,"test-token-at-least-thirty-two-characters",assets)
  if err!=nil{t.Fatal(err)}
- for _,url:=range []string{"/api/v2/overview","/api/v2/accounts","/api/v2/chats","/api/v2/tasks","/api/v2/archive","/api/v2/storage"}{
+ for _,url:=range []string{"/api/overview","/api/accounts","/api/chats","/api/tasks","/api/archive","/api/storage"}{
   req:=httptest.NewRequest(http.MethodGet,url,nil)
   w:=httptest.NewRecorder();r.ServeHTTP(w,req)
   if w.Code!=http.StatusUnauthorized{t.Fatalf("%s: %d",url,w.Code)}

@@ -37,7 +37,7 @@ var (
 )
 
 func main() {
-	state := flag.String("state-dir", "", "dedicated private V2 test directory (required)")
+	state := flag.String("state-dir", "", "dedicated private test directory (required)")
 	messageID := flag.Int("message-id", 0, "explicit Saved Messages media ID to download (0 = list only)")
 	flag.Parse()
 	if err := run(*state, *messageID); err != nil {
@@ -96,7 +96,7 @@ func run(state string, messageID int) error {
 		SessionStorage: &session.FileStorage{Path: sessionPath},
 	})
 
-	fmt.Println("Connecting with isolated V2 session...")
+	fmt.Println("Connecting with isolated session...")
 	return client.Run(ctx, func(ctx context.Context) error {
 		status, err := client.Auth().Status(ctx)
 		if err != nil {

@@ -1,16 +1,16 @@
-name: telegram-backup-v2
+name: telegram-backup
 services:
   postgres:
     image: postgres:18
     restart: unless-stopped
     environment:
-      POSTGRES_DB: telegram_backup_v2
+      POSTGRES_DB: telegram_backup
       POSTGRES_USER: telegram_backup
-      POSTGRES_PASSWORD: ${V2_DB_PASSWORD:?set V2_DB_PASSWORD}
+      POSTGRES_PASSWORD: ${TGB_DB_PASSWORD:?set TGB_DB_PASSWORD}
     volumes:
-      - postgres_v2:/var/lib/postgresql
+      - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL","pg_isready -U telegram_backup -d telegram_backup_v2"]
+      test: ["CMD-SHELL","pg_isready -U telegram_backup -d telegram_backup"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -20,7 +20,7 @@ services:
       dockerfile: Dockerfile
     command: ["migrate"]
     environment:
-      V2_DATABASE_URL: postgres://telegram_backup:${V2_DB_PASSWORD}@postgres:5432/telegram_backup_v2?sslmode=disable
+      TGB_DATABASE_URL: postgres://telegram_backup:${TGB_DB_PASSWORD}@postgres:5432/telegram_backup?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
@@ -30,13 +30,13 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      V2_DATABASE_URL: postgres://telegram_backup:${V2_DB_PASSWORD}@postgres:5432/telegram_backup_v2?sslmode=disable
-      V2_ADMIN_TOKEN: ${V2_ADMIN_TOKEN:?set V2_ADMIN_TOKEN}
-      V2_ENCRYPTION_KEY: ${V2_ENCRYPTION_KEY:?set V2_ENCRYPTION_KEY}
-      V2_ENABLE_WORKERS: ${V2_ENABLE_WORKERS:-true}
-      V2_CACHE_GIB: ${V2_CACHE_GIB:-10}
-      V2_MIN_FREE_GIB: ${V2_MIN_FREE_GIB:-5}
-      V2_GOOGLE_REDIRECT_URI: ${V2_GOOGLE_REDIRECT_URI:-}
+      TGB_DATABASE_URL: postgres://telegram_backup:${TGB_DB_PASSWORD}@postgres:5432/telegram_backup?sslmode=disable
+      TGB_ADMIN_TOKEN: ${TGB_ADMIN_TOKEN:?set TGB_ADMIN_TOKEN}
+      TGB_ENCRYPTION_KEY: ${TGB_ENCRYPTION_KEY:?set TGB_ENCRYPTION_KEY}
+      TGB_ENABLE_WORKERS: ${TGB_ENABLE_WORKERS:-true}
+      TGB_CACHE_GIB: ${TGB_CACHE_GIB:-10}
+      TGB_MIN_FREE_GIB: ${TGB_MIN_FREE_GIB:-5}
+      TGB_GOOGLE_REDIRECT_URI: ${TGB_GOOGLE_REDIRECT_URI:-}
     ports:
       - "127.0.0.1:8081:8081"
     depends_on:
@@ -53,7 +53,7 @@ services:
       - no-new-privileges:true
     cap_drop: [ALL]
     volumes:
-      - app_v2:/var/lib/telegram-backup-v2
+      - app_data:/var/lib/telegram-backup
 volumes:
-  postgres_v2:
-  app_v2:
+  postgres_data:
+  app_data:

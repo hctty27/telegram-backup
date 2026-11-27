@@ -9,7 +9,7 @@ const button="rounded-lg border border-border bg-card px-3 py-2 text-sm font-med
 const primary="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
 
 async function request<T>(token:string,path:string,method="GET",body?:unknown):Promise<T>{
- const r=await fetch("/api/v2/"+path,{method,headers:{Authorization:"Bearer "+token,...(body===undefined?{}:{"Content-Type":"application/json"})},body:body===undefined?undefined:JSON.stringify(body),cache:"no-store"})
+ const r=await fetch("/api/"+path,{method,headers:{Authorization:"Bearer "+token,...(body===undefined?{}:{"Content-Type":"application/json"})},body:body===undefined?undefined:JSON.stringify(body),cache:"no-store"})
  if(!r.ok)throw new Error(r.status===401?"管理令牌无效":r.status===409?"当前状态不允许此操作":r.status===404?"工作引擎未启用":"操作失败，请检查连接与配置（"+r.status+"）")
  return r.json()
 }

@@ -13,7 +13,7 @@ type Box struct{ aead cipher.AEAD }
 
 func NewBox(keyHex string)(*Box,error){
  key,err:=hex.DecodeString(keyHex)
- if err!=nil||len(key)!=32{return nil,errors.New("V2 encryption key must be 32 random bytes encoded as hex")}
+ if err!=nil||len(key)!=32{return nil,errors.New("encryption key must be 32 random bytes encoded as hex")}
  defer clear(key)
  block,err:=aes.NewCipher(key);if err!=nil{return nil,err}
  aead,err:=cipher.NewGCM(block);if err!=nil{return nil,err}

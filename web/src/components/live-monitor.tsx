@@ -24,7 +24,7 @@ function useMonitor(token:string,enabled:boolean){
    controller=new AbortController()
    let reader:ReadableStreamDefaultReader<Uint8Array>|undefined
    try{
-    const res=await fetch("/api/v2/monitor/events",{headers:{Authorization:"Bearer "+token,Accept:"text/event-stream"},signal:controller.signal,cache:"no-store"})
+    const res=await fetch("/api/monitor/events",{headers:{Authorization:"Bearer "+token,Accept:"text/event-stream"},signal:controller.signal,cache:"no-store"})
     if(!res.ok||!res.body)throw new Error("stream unavailable")
     reader=res.body.getReader()
     const decoder=new TextDecoder()

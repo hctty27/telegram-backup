@@ -15,7 +15,7 @@ func NewRouter() http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status": "ok",
-			"service": "telegram-backup-v2",
+			"service": "telegram-backup",
 			"stage": "foundation",
 		})
 	})

@@ -2,7 +2,7 @@ package main
 
 import "testing"
 func TestGiBSetting(t *testing.T){
- const name="TEST_V2_GIB"
+ const name="TEST_TGB_GIB"
  t.Setenv(name,"")
  if n,e:=gibSetting(name,10);e!=nil||n!=10<<30{t.Fatalf("default: %d %v",n,e)}
  t.Setenv(name,"3")

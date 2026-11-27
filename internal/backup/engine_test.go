@@ -40,7 +40,7 @@ func TestSafeName(t *testing.T){
 }
 // Run only with an explicitly provisioned disposable integration database.
 func TestDurablePipeline(t *testing.T){
- url:=os.Getenv("V2_INTEGRATION_DATABASE_URL")
+ url:=os.Getenv("TGB_INTEGRATION_DATABASE_URL")
  if url==""{t.Skip("disposable integration database not configured")}
  ctx,cancel:=context.WithTimeout(context.Background(),time.Minute);defer cancel()
  pool,err:=pgxpool.New(ctx,url);if err!=nil{t.Fatal(err)};defer pool.Close()

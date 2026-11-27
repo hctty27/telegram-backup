@@ -1,4 +1,4 @@
-// Package backup coordinates the durable V2 transfer pipeline.
+// Package backup coordinates the durable transfer pipeline.
 package backup
 
 import(

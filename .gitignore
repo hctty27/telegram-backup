@@ -2,7 +2,6 @@
 .env
 .env.*
 !.env.example
-!.env.v2.example
 *.session
 *.session-journal
 *.session.json
@@ -12,11 +11,6 @@ downloads/
 *.db
 *.db-shm
 *.db-wal
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.venv/
-venv/
 node_modules/
 dist/
 .DS_Store

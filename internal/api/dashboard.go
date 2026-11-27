@@ -25,7 +25,7 @@ func NewDashboardRouter(pool *pgxpool.Pool,token string,assets fs.FS, additional
   if pool.Ping(ctx)!=nil{http.Error(w,"database unavailable",503);return}
   w.WriteHeader(204)
  })
- r.Route("/api/v2",func(r chi.Router){
+ r.Route("/api",func(r chi.Router){
   r.Use(func(next http.Handler)http.Handler{return http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
    w.Header().Set("Cache-Control","no-store")
    h:=r.Header.Get("Authorization")

@@ -11,7 +11,7 @@ import(
 )
 func TestDriveOAuthState(t *testing.T){
  o,err:=NewDriveOAuth(nil,"https://backup.example.com/api/oauth/google/callback");if err!=nil{t.Fatal(err)}
- req:=httptest.NewRequest("POST","/api/v2/storage/oauth/start",strings.NewReader(`{"name":"drive","client_id":"example.apps.googleusercontent.com","client_secret":"test-secret","token":"","root_folder_id":""}`))
+ req:=httptest.NewRequest("POST","/api/storage/oauth/start",strings.NewReader(`{"name":"drive","client_id":"example.apps.googleusercontent.com","client_secret":"test-secret","token":"","root_folder_id":""}`))
  w:=httptest.NewRecorder();o.start(w,req)
  if w.Code!=200{t.Fatal(w.Code,w.Body.String())}
  var body map[string]string

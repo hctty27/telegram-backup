@@ -15,7 +15,7 @@ import (
 // It validates the transfer adapter, not Google's authorization or API behavior.
 func TestRcloneLocalRoundTrip(t *testing.T){
  if _,err:=exec.LookPath("rclone");err!=nil{
-  if os.Getenv("V2_REQUIRE_RCLONE_TEST")=="true"{t.Fatal(err)}
+  if os.Getenv("TGB_REQUIRE_RCLONE_TEST")=="true"{t.Fatal(err)}
   t.Skip("rclone binary unavailable")
  }
  root:=t.TempDir()

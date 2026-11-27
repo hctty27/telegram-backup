@@ -1,5 +1,5 @@
 {
-  "name": "telegram-backup-v2-web",
+  "name": "telegram-backup-web",
   "version": "0.2.0",
   "private": true,
   "type": "module",

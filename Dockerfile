@@ -24,13 +24,13 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --gid 10001 app && useradd --uid 10001 --gid 10001 --no-create-home app \
- && install -d -m 0700 -o app -g app /var/lib/telegram-backup-v2
+ && install -d -m 0700 -o app -g app /var/lib/telegram-backup
 COPY --from=rclone /usr/local/bin/rclone /usr/local/bin/rclone
 RUN rclone version | grep -Fx 'rclone v1.76.0'
 WORKDIR /app
 COPY --from=builder /out/ /usr/local/bin/
 COPY migrations/ /app/migrations/
 USER 10001:10001
-ENV V2_HTTP_ADDR=0.0.0.0:8081 V2_MIGRATIONS_DIR=/app/migrations
+ENV TGB_HTTP_ADDR=0.0.0.0:8081 TGB_MIGRATIONS_DIR=/app/migrations
 EXPOSE 8081
 CMD ["server"]

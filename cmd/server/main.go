@@ -36,16 +36,16 @@ func main(){
 }
 func run()error{
  ctx,stop:=signal.NotifyContext(context.Background(),os.Interrupt,syscall.SIGTERM);defer stop()
- addr:=os.Getenv("V2_HTTP_ADDR");if addr==""{addr="127.0.0.1:8081"}
+ addr:=os.Getenv("TGB_HTTP_ADDR");if addr==""{addr="127.0.0.1:8081"}
  var handler http.Handler=api.NewRouter()
- if url:=os.Getenv("V2_DATABASE_URL");url!=""{
+ if url:=os.Getenv("TGB_DATABASE_URL");url!=""{
   pool,err:=pgxpool.New(ctx,url);if err!=nil{return err};defer pool.Close()
   check,cancel:=context.WithTimeout(ctx,10*time.Second)
   err=pool.Ping(check);cancel();if err!=nil{return err}
   assets,err:=web.Assets();if err!=nil{return err}
-  if os.Getenv("V2_ENABLE_WORKERS")=="true"{
-   box,err:=security.NewBox(os.Getenv("V2_ENCRYPTION_KEY"));if err!=nil{return err}
-   root:=os.Getenv("V2_DATA_DIR");if root==""{root="/var/lib/telegram-backup-v2"}
+  if os.Getenv("TGB_ENABLE_WORKERS")=="true"{
+   box,err:=security.NewBox(os.Getenv("TGB_ENCRYPTION_KEY"));if err!=nil{return err}
+   root:=os.Getenv("TGB_DATA_DIR");if root==""{root="/var/lib/telegram-backup"}
    root,err=filepath.Abs(root);if err!=nil{return err}
    stage:=filepath.Join(root,"staging")
    if err=privateDir(root);err!=nil{return err}
@@ -76,8 +76,8 @@ func run()error{
    }()
    defer func(){cancelWatch();<-watchDone}()
    if err=clearPartials(stage);err!=nil{return err}
-   quotaBytes,err:=gibSetting("V2_CACHE_GIB",10);if err!=nil{return err}
-   reserveBytes,err:=gibSetting("V2_MIN_FREE_GIB",5);if err!=nil{return err}
+   quotaBytes,err:=gibSetting("TGB_CACHE_GIB",10);if err!=nil{return err}
+   reserveBytes,err:=gibSetting("TGB_MIN_FREE_GIB",5);if err!=nil{return err}
    q,err:=disk.New(quotaBytes,reserveBytes,func()(disk.Usage,error){return disk.MeasureDirectory(stage)});if err!=nil{return err}
    service:=telegram.New(pool,box)
    login:=telegram.NewLoginManager(ctx,service)
@@ -89,10 +89,10 @@ func run()error{
    service.Residents=residents
    defer func(){cancelResidents();residents.Wait()}()
    actions:=&api.Actions{Pool:pool,Telegram:service,Login:login,Engine:engine,Managed:cloud}
-   if redirect:=os.Getenv("V2_GOOGLE_REDIRECT_URI");redirect!=""{
+   if redirect:=os.Getenv("TGB_GOOGLE_REDIRECT_URI");redirect!=""{
     actions.OAuth,err=api.NewDriveOAuth(cloud,redirect);if err!=nil{return err}
    }
-   handler,err=api.NewDashboardRouter(pool,os.Getenv("V2_ADMIN_TOKEN"),assets,actions.Routes)
+   handler,err=api.NewDashboardRouter(pool,os.Getenv("TGB_ADMIN_TOKEN"),assets,actions.Routes)
    if err!=nil{return err}
    if actions.OAuth!=nil{handler=actions.OAuth.Wrap(handler)}
    if err=jobs.Start(ctx);err!=nil{return err}
@@ -109,16 +109,16 @@ func run()error{
      select{case <-schedulerCtx.Done():return;case <-ticker.C:}
     }
    }()
-   slog.Info("V2 realtime and polling backup engine enabled")
+   slog.Info("realtime and polling backup engine enabled")
   }else{
-   handler,err=api.NewDashboardRouter(pool,os.Getenv("V2_ADMIN_TOKEN"),assets)
+   handler,err=api.NewDashboardRouter(pool,os.Getenv("TGB_ADMIN_TOKEN"),assets)
    if err!=nil{return err}
-   slog.Info("V2 read-only dashboard; workers disabled")
+   slog.Info("read-only dashboard; workers disabled")
   }
  }
  srv:=&http.Server{Addr:addr,Handler:handler,ReadHeaderTimeout:5*time.Second,ReadTimeout:15*time.Second,WriteTimeout:60*time.Second,IdleTimeout:60*time.Second,MaxHeaderBytes:32<<10}
  errs:=make(chan error,1)
- go func(){slog.Info("V2 listening","addr",addr);errs<-srv.ListenAndServe()}()
+ go func(){slog.Info("listening","addr",addr);errs<-srv.ListenAndServe()}()
  select{
  case err:=<-errs:if errors.Is(err,http.ErrServerClosed){return nil};return err
  case <-ctx.Done():shutdown,cancel:=context.WithTimeout(context.Background(),10*time.Second);defer cancel();return srv.Shutdown(shutdown)

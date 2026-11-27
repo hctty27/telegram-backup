@@ -29,12 +29,12 @@ func TestMonitorAuthAndStream(t *testing.T){
  actions:=&Actions{Engine:&backup.Engine{Quota:quota,Progress:tracker}}
  router,err:=NewDashboardRouter(pool,token,fstest.MapFS{"index.html":&fstest.MapFile{Data:[]byte("test")}},actions.Routes)
  if err!=nil{t.Fatal(err)}
- for _,path:=range []string{"/api/v2/monitor","/api/v2/monitor/events"}{
+ for _,path:=range []string{"/api/monitor","/api/monitor/events"}{
   w:=httptest.NewRecorder();router.ServeHTTP(w,httptest.NewRequest("GET",path,nil))
   if w.Code!=http.StatusUnauthorized{t.Fatalf("%s: unauthorized status %d",path,w.Code)}
  }
  srv:=httptest.NewServer(router);defer srv.Close()
- req,err:=http.NewRequestWithContext(ctx,"GET",srv.URL+"/api/v2/monitor/events",nil)
+ req,err:=http.NewRequestWithContext(ctx,"GET",srv.URL+"/api/monitor/events",nil)
  if err!=nil{t.Fatal(err)}
  req.Header.Set("Authorization","Bearer "+token)
  res,err:=srv.Client().Do(req);if err!=nil{t.Fatal(err)};defer res.Body.Close()
