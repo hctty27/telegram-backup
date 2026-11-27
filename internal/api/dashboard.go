@@ -15,7 +15,7 @@ import(
  "github.com/jackc/pgx/v5/pgxpool"
 )
 
-func NewDashboardRouter(pool *pgxpool.Pool,token string,assets fs.FS)(http.Handler,error){
+func NewDashboardRouter(pool *pgxpool.Pool,token string,assets fs.FS, additional ...func(chi.Router))(http.Handler,error){
  if pool==nil||len(token)<32||assets==nil{return nil,errors.New("database, assets, and a strong admin token required")}
  hash:=sha256.Sum256([]byte(token))
  r:=chi.NewRouter()
@@ -47,11 +47,12 @@ func NewDashboardRouter(pool *pgxpool.Pool,token string,assets fs.FS)(http.Handl
   r.Get("/accounts",jsonQuery(pool,`SELECT coalesce(json_agg(x),'[]'::json) FROM
    (SELECT id::text,display_name,enabled,created_at FROM telegram_accounts ORDER BY id DESC LIMIT 100)x`))
   r.Get("/chats",jsonQuery(pool,`SELECT coalesce(json_agg(x),'[]'::json) FROM
-   (SELECT id::text,title,peer_kind,enabled FROM telegram_chats ORDER BY id DESC LIMIT 100)x`))
+   (SELECT c.id::text,c.title,c.peer_kind,c.enabled,p.remote_id::text,p.scan_interval_seconds FROM telegram_chats c LEFT JOIN backup_policies p ON p.chat_id=c.id ORDER BY c.id DESC LIMIT 100)x`))
   r.Get("/tasks",jsonQuery(pool,`SELECT coalesce(json_agg(x),'[]'::json) FROM
-   (SELECT id::text,filename,state,expected_bytes,updated_at FROM media_files WHERE state<>'completed' ORDER BY id DESC LIMIT 100)x`))
+   (SELECT id::text,filename,state,expected_bytes,updated_at,last_error FROM media_files WHERE state<>'completed' ORDER BY id DESC LIMIT 100)x`))
   r.Get("/archive",jsonQuery(pool,`SELECT coalesce(json_agg(x),'[]'::json) FROM
    (SELECT id::text,filename,state,expected_bytes,updated_at FROM media_files WHERE state='completed' ORDER BY id DESC LIMIT 100)x`))
+  for _,register:=range additional{register(r)}
   r.Get("/storage",jsonQuery(pool,`SELECT coalesce(json_agg(x),'[]'::json) FROM
    (SELECT id::text,name,kind,enabled FROM storage_remotes ORDER BY id DESC LIMIT 100)x`))
  })
