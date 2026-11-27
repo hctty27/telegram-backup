@@ -52,3 +52,19 @@ func(m *Manager) Reserve(size int64)(func(),error){
  var once sync.Once
  return func(){once.Do(func(){m.mu.Lock();m.promised-=size;m.mu.Unlock()})},nil
 }
+
+type Snapshot struct{
+ Staged int64 `json:"staged_bytes"`
+ Free int64 `json:"free_bytes"`
+ Quota int64 `json:"quota_bytes"`
+ Reserve int64 `json:"reserve_bytes"`
+ Promised int64 `json:"promised_bytes"`
+ Available int64 `json:"available_bytes"`
+}
+func(m *Manager)Snapshot()(Snapshot,error){
+ m.mu.Lock();defer m.mu.Unlock()
+ u,err:=m.measure();if err!=nil{return Snapshot{},err}
+ if u.Staged<0||u.Free<0{return Snapshot{},errors.New("invalid disk measurement")}
+ a:=max(int64(0),min(max(int64(0),m.quota-u.Staged),max(int64(0),u.Free-m.reserve))-m.promised)
+ return Snapshot{Staged:u.Staged,Free:u.Free,Quota:m.quota,Reserve:m.reserve,Promised:m.promised,Available:a},nil
+}
