@@ -1,29 +1,75 @@
-name: V2 foundation
-
+name: V2 verification
 on:
   push:
     branches: [v2-rewrite]
   pull_request:
-    branches: [v2-rewrite]
-
+    branches: [main, v2-rewrite]
 permissions:
   contents: read
-
 jobs:
-  go:
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: telegram_backup_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      V2_DATABASE_URL: postgres://postgres:ci-only-password@127.0.0.1:5432/telegram_backup_test?sslmode=disable
+      V2_ADMIN_TOKEN: ci-only-test-token-not-for-production-12345
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - uses: actions/setup-go@v5
         with:
           go-version: '1.27.4'
           cache: false
-      - name: Resolve pinned dependencies
+      - name: Frontend install and typecheck/build
+        working-directory: web
+        run: npm install --no-audit --no-fund && npm run build
+      - name: Resolve dependencies
         run: go mod tidy
-      - name: Compile
-        run: go build ./...
-      - name: Vet
-        run: go vet ./...
-      - name: Test
+      - name: Compile and vet
+        run: go build ./... && go vet ./...
+      - name: Unit and race tests
         run: go test -race ./...
+      - name: PostgreSQL and River migrations
+        run: go run ./cmd/migrate && go run ./cmd/migrate
+      - name: Preview API smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          go build -o /tmp/tgb-v2 ./cmd/server
+          /tmp/tgb-v2 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8081/api/ready >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8081/api/health
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/api/v2/overview)" = 401
+          curl -fsS -H "Authorization: Bearer $V2_ADMIN_TOKEN" http://127.0.0.1:8081/api/v2/overview | jq -e '.accounts == 0 and .completed == 0'
+          curl -fsS http://127.0.0.1:8081/ | grep -q 'TelegramBackup V2'
+      - name: Save resolved dependency locks for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: v2-dependency-locks
+          path: |
+            go.mod
+            go.sum
+            web/package-lock.json
+      - name: Build V2 image
+        run: docker build -f Dockerfile.v2 -t telegram-backup-v2:ci .
