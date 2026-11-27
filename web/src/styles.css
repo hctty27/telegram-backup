@@ -3,6 +3,19 @@
 :root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color-scheme:light;--background:#fafafa;--foreground:#18181b;--card:#fff;--card-foreground:#18181b;--border:#e4e4e7;--muted:#71717a;--accent:#2563eb}
 :root.dark{color-scheme:dark;--background:#09090b;--foreground:#fafafa;--card:#141416;--card-foreground:#fafafa;--border:#29292e;--muted:#a1a1aa;--accent:#60a5fa}
 @theme inline{--color-background:var(--background);--color-foreground:var(--foreground);--color-card:var(--card);--color-card-foreground:var(--card-foreground);--color-border:var(--border);--color-muted-foreground:var(--muted);--color-primary:var(--accent)}
-body{margin:0;min-width:320px;background:var(--background);color:var(--foreground)}
+body{margin:0;min-width:0;background:var(--background);color:var(--foreground)}
 button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.55}button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 ::selection{background:#2563eb;color:white}
+
+/* Safe areas and touch-friendly layout; do not mask horizontal overflow. */
+.app-shell{padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.login-shell{position:relative;padding-top:max(68px,calc(env(safe-area-inset-top,0px) + 60px));padding-bottom:max(16px,env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.login-theme{right:max(16px,env(safe-area-inset-right,0px));top:max(16px,env(safe-area-inset-top,0px))}
+.icon-button{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;flex-shrink:0}
+.admin-card .form-control{min-height:44px;max-width:100%}
+.admin-card textarea{width:100%;resize:vertical;overflow-wrap:anywhere}
+.admin-card label{min-width:0;max-width:100%}
+.admin-card [role=status]{overflow-wrap:anywhere}
+@media(max-width:767px){.admin-card input:not([type=checkbox]),.admin-card textarea,.admin-card select{width:100%;font-size:16px}.admin-card select{min-width:0}.admin-card .policy-form button{width:100%}.admin-card img{max-width:100%}}
+
+@media(min-width:768px){.icon-button.md\\:hidden{display:none}}

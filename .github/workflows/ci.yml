@@ -159,8 +159,39 @@ jobs:
         if: always()
         working-directory: web
         run: npm audit --audit-level=high
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build production frontend
+        working-directory: web
+        run: npm ci --no-audit --no-fund && npm run build
+      - name: Install isolated browser test tools
+        run: |
+          npm install --prefix "$RUNNER_TEMP/tgb-browser" --ignore-scripts --no-audit --no-fund --save-exact playwright@1.56.1
+          "$RUNNER_TEMP/tgb-browser/node_modules/.bin/playwright" install --with-deps chromium webkit
+      - name: Responsive browser smoke tests
+        working-directory: web
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/vite preview --host 127.0.0.1 --port 4173 --strictPort >/tmp/tgb-browser-preview.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4173/ >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:4173/ >/dev/null
+          TGB_PLAYWRIGHT_DIR="$RUNNER_TEMP/tgb-browser" node tests/responsive.mjs
   publish:
-    needs: [verify, security]
+    needs: [verify, security, browser]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     timeout-minutes: 20

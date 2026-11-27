@@ -55,7 +55,7 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --no-buil
 - [安装、限制和验证状态](docs/operations.md)
 - [Telegram 独立联调工具](docs/telegram-probe.md)
 
-Go 1.27.4 / Node 22；CI 执行前端构建、Go build/vet/race、数据库迁移、模拟备份集成、Docker 和全新 Compose 启动检查。依赖锁文件已入库；完整自动化测试、安全扫描和容器部署检查由 CI 执行。实际服务验收需使用授权测试账号。
+Go 1.27.4 / Node 22；CI 执行前端构建、Go build/vet/race、数据库迁移、模拟备份集成、Docker 和全新 Compose 启动检查。依赖锁文件已入库；完整自动化测试、安全扫描和容器部署检查由 CI 执行。前端 CI 使用 Chromium/WebKit 设备模拟检查 320px 小屏、iPhone、Android、iPad 与桌面布局、表单、导航、主题及横向溢出；通过后才允许发布镜像。浏览器测试使用模拟接口，不代替真实设备或真实服务验收，实际服务验收需使用授权测试账号。
 
 ```sh
 (cd web && npm ci && npm run build)
