@@ -11,6 +11,7 @@ import(
 
  "github.com/go-chi/chi/v5"
  "github.com/hctty27/telegram-backup/internal/backup"
+ "github.com/hctty27/telegram-backup/internal/storage"
  "github.com/hctty27/telegram-backup/internal/telegram"
  "github.com/jackc/pgx/v5"
  "github.com/jackc/pgx/v5/pgxpool"
@@ -21,6 +22,7 @@ type Actions struct{
  Telegram *telegram.Service
  Login *telegram.LoginManager
  Engine *backup.Engine
+ Managed *storage.Managed
 }
 func decode(w http.ResponseWriter,r *http.Request,v any)error{
  r.Body=http.MaxBytesReader(w,r.Body,64<<10)
@@ -64,15 +66,18 @@ func(a *Actions)Routes(r chi.Router){
   reply(w,map[string]int{"imported":count})
  })
  r.Post("/storage",func(w http.ResponseWriter,r *http.Request){
-  var req struct{Name string `json:"name"`}
-  if decode(w,r,&req)!=nil{fail(w);return}
+  var req storage.DriveConfig
+  if a.Managed==nil||decode(w,r,&req)!=nil{fail(w);return}
   ctx,cancel:=context.WithTimeout(r.Context(),30*time.Second);defer cancel()
-  if a.Engine.Cloud.TestRemote(ctx,req.Name)!=nil{fail(w);return}
-  // The operator-provisioned private rclone config is the source of truth.
-  // Never return OAuth tokens or accept arbitrary rclone flags or paths.
-  _,err:=a.Pool.Exec(r.Context(),`INSERT INTO storage_remotes(name,kind,config_ciphertext,enabled)
-  VALUES($1,'rclone',decode('','hex'),true) ON CONFLICT(name) DO UPDATE SET enabled=true`,req.Name)
-  if err!=nil{fail(w);return};reply(w,map[string]bool{"ok":true})
+  if a.Managed.CreateDrive(ctx,req)!=nil{fail(w);return}
+  reply(w,map[string]bool{"ok":true})
+ })
+ r.Post("/storage/{id}/test",func(w http.ResponseWriter,r *http.Request){
+  id,err:=idParam(r);if err!=nil||a.Managed==nil{fail(w);return}
+  ctx,cancel:=context.WithTimeout(r.Context(),30*time.Second);defer cancel()
+  var name string
+  if a.Pool.QueryRow(ctx,"SELECT name FROM storage_remotes WHERE id=$1",id).Scan(&name)!=nil||a.Managed.TestRemote(ctx,name)!=nil{fail(w);return}
+  reply(w,map[string]bool{"ok":true})
  })
  r.Put("/chats/{id}/policy",func(w http.ResponseWriter,r *http.Request){
   id,err:=idParam(r)
@@ -116,5 +121,5 @@ func(a *Actions)Routes(r chi.Router){
   if _,err=a.Engine.Jobs.JobRetryTx(r.Context(),tx,jobID);err!=nil{fail(w);return}
   if tx.Commit(r.Context())!=nil{fail(w);return};reply(w,map[string]bool{"ok":true})
  })
- r.Get("/capabilities",func(w http.ResponseWriter,r *http.Request){reply(w,map[string]any{"workers_enabled":true,"sync_mode":"polling","storage_config":"private rclone config"})})
+ r.Get("/capabilities",func(w http.ResponseWriter,r *http.Request){reply(w,map[string]any{"workers_enabled":true,"sync_mode":"polling","storage_config":"encrypted Drive OAuth token"})})
 }
