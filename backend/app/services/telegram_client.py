@@ -73,7 +73,7 @@ class TelegramService:
             await self.client.disconnect()
         self.authorized = False
 
-    async def send_login_code(self, phone: str) -> None:
+    async def send_login_code(self, phone: str) -> dict[str, Any]:
         if not self.configured:
             raise RuntimeError("Save Telegram API ID and API Hash first.")
         client = self._ensure_client()
@@ -86,6 +86,38 @@ class TelegramService:
         self._login_phone = phone
         self._phone_code_hash = sent.phone_code_hash
         self._secure_session_file()
+
+        sent_type = getattr(sent, "type", None)
+        next_type = getattr(sent, "next_type", None)
+        type_name = type(sent_type).__name__ if sent_type is not None else "Unknown"
+        next_type_name = type(next_type).__name__ if next_type is not None else None
+        labels = {
+            "SentCodeTypeApp": "Telegram 已登录设备内通知",
+            "SentCodeTypeSms": "手机短信",
+            "SentCodeTypeCall": "语音电话",
+            "SentCodeTypeFlashCall": "闪呼验证",
+            "SentCodeTypeMissedCall": "未接来电验证",
+            "SentCodeTypeEmailCode": "登录邮箱",
+            "SentCodeTypeFragmentSms": "Fragment 验证",
+            "SentCodeTypeSetUpEmailRequired": "需要先设置登录邮箱",
+            "SentCodeTypeFirebaseSms": "Firebase 短信（官方移动端流程）",
+        }
+        next_labels = {
+            "CodeTypeSms": "手机短信",
+            "CodeTypeCall": "语音电话",
+            "CodeTypeFlashCall": "闪呼验证",
+            "CodeTypeMissedCall": "未接来电验证",
+            "CodeTypeFragmentSms": "Fragment 验证",
+        }
+        return {
+            "delivery_type": type_name,
+            "delivery_label": labels.get(type_name, f"Telegram 返回的验证方式（{type_name}）"),
+            "next_type": next_type_name,
+            "next_label": next_labels.get(next_type_name, next_type_name) if next_type_name else None,
+            "timeout": getattr(sent, "timeout", None),
+            "email_pattern": getattr(sent_type, "email_pattern", None),
+            "fragment_url": getattr(sent_type, "url", None),
+        }
 
     async def verify_login_code(self, code: str) -> bool:
         if not self.client or not self.client.is_connected():

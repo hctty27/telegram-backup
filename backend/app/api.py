@@ -233,7 +233,7 @@ async def update_telegram_credentials(
 @router.post("/settings/telegram/send-code")
 async def send_telegram_code(payload: TelegramPhoneIn, request: Request):
     try:
-        await request.app.state.telegram.send_login_code(payload.phone.strip())
+        delivery = await request.app.state.telegram.send_login_code(payload.phone.strip())
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except FloodWaitError as exc:
@@ -258,7 +258,7 @@ async def send_telegram_code(payload: TelegramPhoneIn, request: Request):
             status_code=502,
             detail=f"Telegram login request failed due to a server/network error ({type(exc).__name__}). Check backend logs.",
         ) from exc
-    return {"sent": True}
+    return {"sent": True, **delivery}
 
 
 @router.post("/settings/telegram/verify-code")

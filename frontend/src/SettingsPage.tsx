@@ -44,6 +44,11 @@ export default function SettingsPage({ api, onRefresh }: Props) {
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [codeSent, setCodeSent] = useState(false);
+  const [codeDelivery, setCodeDelivery] = useState<{
+    delivery_type: string; delivery_label: string; next_type: string | null;
+    next_label: string | null; timeout: number | null;
+    email_pattern?: string | null; fragment_url?: string | null;
+  } | null>(null);
   const [needsPassword, setNeedsPassword] = useState(false);
 
   const [remoteName, setRemoteName] = useState("google-drive");
@@ -102,10 +107,11 @@ export default function SettingsPage({ api, onRefresh }: Props) {
       return;
     }
     void run(async () => {
-      await api.sendTelegramCode(phone.trim());
+      const result = await api.sendTelegramCode(phone.trim());
+      setCodeDelivery(result);
       setCodeSent(true);
       setNeedsPassword(false);
-    }, "验证码已发送，请检查 Telegram 客户端或短信");
+    }, "Telegram 已接受验证码请求，请按下方显示的渠道查收");
   };
 
   const verifyCode = () => {
@@ -234,6 +240,24 @@ export default function SettingsPage({ api, onRefresh }: Props) {
           <Button onClick={sendCode} loading={busy} disabled={!settings?.telegram_configured}>
             发送登录验证码
           </Button>
+          {codeSent && codeDelivery && (
+            <Alert
+              type="info"
+              showIcon
+              message={`Telegram 返回的投递方式：${codeDelivery.delivery_label}`}
+              description={
+                <Space direction="vertical" size={4}>
+                  <Text>返回类型：{codeDelivery.delivery_type}</Text>
+                  {codeDelivery.email_pattern && <Text>目标邮箱：{codeDelivery.email_pattern}</Text>}
+                  {codeDelivery.fragment_url && <Text>验证入口：<a href={codeDelivery.fragment_url} target="_blank" rel="noreferrer">打开 Fragment</a></Text>}
+                  {codeDelivery.timeout != null && <Text>等待时间：{codeDelivery.timeout} 秒</Text>}
+                  {codeDelivery.next_label && <Text>未收到时 Telegram 提供的下一种方式：{codeDelivery.next_label}</Text>}
+                  {codeDelivery.delivery_type === "SentCodeTypeApp" && <Text>Telegram 表示验证码应发送到其他已登录设备的官方服务通知。</Text>}
+                  {!codeDelivery.next_label && <Text>当前响应没有提供下一种投递方式；不要连续重复申请，以免触发限流。</Text>}
+                </Space>
+              }
+            />
+          )}
           {codeSent && (
             <>
               <Input value={code} onChange={(event) => setCode(event.target.value)} placeholder="Telegram 登录验证码" />

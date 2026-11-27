@@ -41,7 +41,16 @@ export function createApi(token: string) {
         body: JSON.stringify(payload)
       }),
     sendTelegramCode: (phone: string) =>
-      request<{ sent: boolean }>("/settings/telegram/send-code", {
+      request<{
+        sent: boolean;
+        delivery_type: string;
+        delivery_label: string;
+        next_type: string | null;
+        next_label: string | null;
+        timeout: number | null;
+        email_pattern?: string | null;
+        fragment_url?: string | null;
+      }>("/settings/telegram/send-code", {
         method: "POST",
         body: JSON.stringify({ phone })
       }),
