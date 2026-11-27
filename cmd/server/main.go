@@ -15,6 +15,7 @@ import (
  "github.com/hctty27/telegram-backup/internal/api"
  "github.com/hctty27/telegram-backup/internal/backup"
  "github.com/hctty27/telegram-backup/internal/disk"
+ "github.com/hctty27/telegram-backup/internal/monitor"
  "github.com/hctty27/telegram-backup/internal/queue"
  "github.com/hctty27/telegram-backup/internal/security"
  "github.com/hctty27/telegram-backup/internal/storage"
@@ -58,7 +59,7 @@ func run()error{
    service:=telegram.New(pool,box)
    login:=telegram.NewLoginManager(ctx,service)
    cloud:=&storage.Rclone{Config:filepath.Join(root,"rclone.conf")}
-   engine:=&backup.Engine{Pool:pool,Telegram:service,Cloud:cloud,Quota:q,Root:stage,MaxFile:quotaBytes}
+   engine:=&backup.Engine{Pool:pool,Telegram:service,Cloud:cloud,Quota:q,Progress:monitor.New(),Root:stage,MaxFile:quotaBytes}
    jobs,err:=queue.New(pool,engine.Handlers());if err!=nil{return err};engine.Jobs=jobs
    actions:=&api.Actions{Pool:pool,Telegram:service,Login:login,Engine:engine}
    handler,err=api.NewDashboardRouter(pool,os.Getenv("V2_ADMIN_TOKEN"),assets,actions.Routes)
@@ -79,7 +80,7 @@ func run()error{
    slog.Info("V2 read-only dashboard; workers disabled")
   }
  }
- srv:=&http.Server{Addr:addr,Handler:handler,ReadHeaderTimeout:5*time.Second,ReadTimeout:15*time.Second,IdleTimeout:60*time.Second,MaxHeaderBytes:32<<10}
+ srv:=&http.Server{Addr:addr,Handler:handler,ReadHeaderTimeout:5*time.Second,ReadTimeout:15*time.Second,WriteTimeout:60*time.Second,IdleTimeout:60*time.Second,MaxHeaderBytes:32<<10}
  errs:=make(chan error,1)
  go func(){slog.Info("V2 listening","addr",addr);errs<-srv.ListenAndServe()}()
  select{
