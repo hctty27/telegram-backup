@@ -23,6 +23,7 @@ type Actions struct{
  Login *telegram.LoginManager
  Engine *backup.Engine
  Managed *storage.Managed
+ OAuth *DriveOAuth
 }
 func decode(w http.ResponseWriter,r *http.Request,v any)error{
  r.Body=http.MaxBytesReader(w,r.Body,64<<10)
@@ -37,6 +38,7 @@ func fail(w http.ResponseWriter){http.Error(w,"operation failed; check configura
 func idParam(r *http.Request)(int64,error){id,err:=strconv.ParseInt(chi.URLParam(r,"id"),10,64);if err!=nil||id<=0{return 0,errors.New("invalid ID")};return id,nil}
 
 func(a *Actions)Routes(r chi.Router){
+ if a.OAuth!=nil{r.Post("/storage/oauth/start",a.OAuth.start)}
  r.Get("/monitor",func(w http.ResponseWriter,r *http.Request){reply(w,a.snapshot())})
  r.Get("/monitor/events",a.stream(make(chan struct{},8)))
  r.Post("/accounts",func(w http.ResponseWriter,r *http.Request){
@@ -121,5 +123,5 @@ func(a *Actions)Routes(r chi.Router){
   if _,err=a.Engine.Jobs.JobRetryTx(r.Context(),tx,jobID);err!=nil{fail(w);return}
   if tx.Commit(r.Context())!=nil{fail(w);return};reply(w,map[string]bool{"ok":true})
  })
- r.Get("/capabilities",func(w http.ResponseWriter,r *http.Request){reply(w,map[string]any{"workers_enabled":true,"sync_mode":"realtime+polling","storage_config":"encrypted Drive OAuth token"})})
+ r.Get("/capabilities",func(w http.ResponseWriter,r *http.Request){reply(w,map[string]any{"workers_enabled":true,"sync_mode":"realtime+polling","storage_config":"encrypted Drive OAuth token","google_oauth":a.OAuth!=nil})})
 }
