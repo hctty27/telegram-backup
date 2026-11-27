@@ -34,6 +34,8 @@ services:
       V2_ADMIN_TOKEN: ${V2_ADMIN_TOKEN:?set V2_ADMIN_TOKEN}
       V2_ENCRYPTION_KEY: ${V2_ENCRYPTION_KEY:?set V2_ENCRYPTION_KEY}
       V2_ENABLE_WORKERS: ${V2_ENABLE_WORKERS:-true}
+      V2_CACHE_GIB: ${V2_CACHE_GIB:-10}
+      V2_MIN_FREE_GIB: ${V2_MIN_FREE_GIB:-5}
     ports:
       - "127.0.0.1:8081:8081"
     depends_on:
