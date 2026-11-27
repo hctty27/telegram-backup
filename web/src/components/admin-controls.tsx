@@ -23,6 +23,7 @@ export function AdminControls({page,token,rows}:{page:string;token:string;rows:R
  if(page==="accounts")return <Accounts token={token} rows={rows}/>
  if(page==="storage")return <Storage token={token}/>
  if(page==="chats")return <Chats token={token} rows={rows}/>
+ if(page==="tasks")return <Tasks token={token} rows={rows}/>
  return null
 }
 function useAction(){
@@ -72,4 +73,11 @@ function Chats({token,rows}:{token:string;rows:Row[]}){
  <label className="grid gap-1 text-sm">扫描间隔（秒）<input className={control+" w-32"} type="number" min={60} max={86400} value={interval} onChange={e=>setInterval(Number(e.target.value))} required/></label>
  <label className="flex items-center gap-2 py-2 text-sm"><input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/>自动备份</label><button className={primary} disabled={!chat||!remote||a.busy}>保存策略</button><button type="button" className={button} disabled={!current?.enabled||a.busy} onClick={()=>void a.run(async()=>{await request(token,"chats/"+chat+"/sync","POST");return "已请求立即扫描"})}>立即同步</button></form>
  <p className="text-xs text-muted-foreground">已启用的群组首次扫描全部历史，后续按游标增量同步。现有策略的远端不可直接更换。</p>{a.message}</Card>
+}
+
+function Tasks({token,rows}:{token:string;rows:Row[]}){
+ const [id,setID]=useState(""),a=useAction()
+ const failed=rows.filter(r=>r.queue_state==="discarded"||r.queue_state==="cancelled")
+ if(failed.length===0)return null
+ return <Card className="space-y-3 p-5"><h2 className="font-medium">失败任务恢复</h2><div className="flex flex-wrap gap-2"><select className={control} aria-label="选择失败任务" value={id} onChange={e=>setID(e.target.value)}><option value="">选择任务</option>{failed.map(r=><option key={String(r.id)} value={String(r.id)}>{String(r.filename)}</option>)}</select><button className={primary} disabled={!id||a.busy} onClick={()=>void a.run(async()=>{await request(token,"tasks/"+id+"/retry","POST");setID("");return "已重新入队"})}>重试</button></div>{a.message}</Card>
 }
