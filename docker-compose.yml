@@ -1,0 +1,36 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: telegram-backup-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATA_DIR: /app/data
+      DOWNLOAD_DIR: /app/data/downloads
+      TELEGRAM_SESSION: /app/data/telegram
+      DATABASE_URL: sqlite+aiosqlite:////app/data/telegram_backup.db
+      RCLONE_CONFIG: /config/rclone/rclone.conf
+    volumes:
+      - ./data:/app/data
+      - ./rclone:/config/rclone
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: telegram-backup-web
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8080:80"
