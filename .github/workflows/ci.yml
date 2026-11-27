@@ -106,8 +106,8 @@ jobs:
           export TGB_ENCRYPTION_KEY=$(openssl rand -hex 32)
           trap 'docker compose down -v' EXIT
           docker compose up -d --build --wait --wait-timeout 120
-          curl -fsS -H "Authorization: Bearer $TGB_ADMIN_TOKEN" http://127.0.0.1:8081/api/capabilities | jq -e '.workers_enabled == true'
-          curl -fsS -H "Authorization: Bearer $TGB_ADMIN_TOKEN" http://127.0.0.1:8081/api/monitor | jq -e '.disk.quota_bytes > 0'
+          curl -fsS -H "Authorization: Bearer $TGB_ADMIN_TOKEN" http://127.0.0.1:8080/api/capabilities | jq -e '.workers_enabled == true'
+          curl -fsS -H "Authorization: Bearer $TGB_ADMIN_TOKEN" http://127.0.0.1:8080/api/monitor | jq -e '.disk.quota_bytes > 0'
   security:
     runs-on: ubuntu-latest
     timeout-minutes: 25
