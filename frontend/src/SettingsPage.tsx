@@ -275,7 +275,7 @@ export default function SettingsPage({ api, onRefresh }: Props) {
         ) : null}
         <Input value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="例如 backup:TelegramBackup" />
         <Space wrap>
-          <Button icon={<ShieldCheckOutlined />} onClick={testStorage} loading={busy} disabled={!settings?.rclone_configured}>测试连接</Button>
+          <Button icon={<CheckCircleOutlined />} onClick={testStorage} loading={busy} disabled={!settings?.rclone_configured}>测试连接</Button>
           <Button type="primary" icon={<SaveOutlined />} onClick={saveDestination} loading={busy} disabled={!settings?.rclone_configured}>设为默认备份目标</Button>
         </Space>
         <Divider />
