@@ -33,11 +33,17 @@ for(const [label,type,options] of cases){
  const errors=[];
  page.on("pageerror",error=>errors.push(error.message));
  let postAccount=false;
+ let qrStarted=false;
+ const qrFixture="data:image/svg+xml,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320"><rect width="320" height="320" fill="white"/><rect x="32" y="32" width="256" height="256" fill="black"/></svg>');
  await page.route("**/api/**",async route=>{
   const req=route.request();
   const name=new URL(req.url()).pathname.slice(5);
   if(req.headers().authorization!=="Bearer "+token)return route.fulfill({status:401,body:"unauthorized"});
   if(name==="monitor/events")return route.fulfill({status:200,contentType:"text/event-stream",body:"data: "+JSON.stringify({disk,transfers:[{id:"1",media_id:"3",stage:"download",bytes:1024,total:4096,speed:200}]})+"\n\n"});
+  if(name==="accounts/1/qr"){
+   if(req.method()==="POST"){qrStarted=true;return route.fulfill({json:{state:"connecting"}});}
+   return route.fulfill({json:qrStarted?{state:"waiting",qr:qrFixture}:{state:"idle"}});
+  }
   if(name==="accounts"&&req.method()==="POST"){
    const data=req.postDataJSON();
    postAccount=data.name==="Test account"&&data.api_id===123&&data.api_hash.length===32;
@@ -82,6 +88,14 @@ for(const [label,type,options] of cases){
     await page.getByText("账号已创建，请点击扫码授权。",{exact:true}).waitFor();
     assert.ok(postAccount,label+" account form payload");
     await noOverflow(page,label+" account feedback");
+    await page.getByRole("button",{name:"扫码授权",exact:true}).click();
+    await page.getByText("授权状态：等待扫码",{exact:true}).waitFor();
+    const image=page.getByRole("img",{name:"Telegram 登录二维码"});
+    await image.waitFor({state:"visible"});
+    await page.waitForFunction(()=>{const img=document.querySelector(".login-qr");return img?.complete&&img.naturalWidth>0;});
+    const rect=await image.boundingBox();
+    assert.ok(rect&&rect.width>=180&&rect.width<=257&&Math.abs(rect.width-rect.height)<=1,label+" incorrect QR layout "+JSON.stringify(rect));
+    await noOverflow(page,label+" QR");
    }
   }
   await page.getByRole("button",{name:"退出",exact:true}).click();

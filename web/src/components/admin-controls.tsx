@@ -4,6 +4,7 @@ import {Card} from "@/components/ui/card"
 
 type Row=Record<string,string|number|boolean|null>
 type Login={state:string;qr?:string;expires?:string}
+const loginLabels:Record<string,string>={idle:"未授权",connecting:"正在连接",waiting:"等待扫码",password:"等待二次验证",checking:"正在验证",authorized:"已授权",failed:"授权失败"}
 const control="form-control min-w-0 max-w-full rounded-lg border border-border bg-background px-3 py-2 text-base md:text-sm"
 const button="min-h-11 max-w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-background"
 const primary="min-h-11 max-w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
@@ -52,8 +53,8 @@ function Accounts({token,rows}:{token:string;rows:Row[]}){
  <div className="flex flex-wrap gap-2 border-t border-border pt-4"><select aria-label="选择 Telegram 账号" className={control} value={account} onChange={e=>{setAccount(e.target.value);setLoginID("");setPassword("")}}><option value="">选择账号</option>{rows.map(r=><option key={String(r.id)} value={String(r.id)}>{String(r.display_name||r.id)}</option>)}</select>
  <button className={button} disabled={!account||a.busy} onClick={()=>void a.run(async()=>{await request(token,"accounts/"+account+"/qr","POST");setLoginID(account);return "扫码授权已启动"})}>扫码授权</button>
  <button className={button} disabled={!account||a.busy} onClick={()=>void a.run(async()=>{const d=await request<{imported:number}>(token,"accounts/"+account+"/chats","POST");return "已刷新 "+d.imported+" 个会话"})}>刷新群组</button></div>
- {loginID&&<div className="space-y-3 rounded-lg border border-border p-4"><p className="text-sm">授权状态：{status?.state||"连接中"}</p>
- {status?.state==="waiting"&&status.qr&&<><img className="h-auto w-full max-w-56 rounded-md bg-white p-2" src={status.qr} alt="Telegram 登录二维码"/><p className="text-sm text-muted-foreground">Telegram → 设置 → 设备 → 连接桌面设备；二维码自动刷新。</p></>}
+ {loginID&&<div className="space-y-3 rounded-lg border border-border p-4"><p className="text-sm">授权状态：{loginLabels[status?.state||"connecting"]||"未知状态"}</p>
+ {status?.state==="waiting"&&status.qr&&<><img className="login-qr" src={status.qr} alt="Telegram 登录二维码" width={256} height={256}/><p className="text-sm text-muted-foreground">Telegram → 设置 → 设备 → 连接桌面设备；二维码自动刷新。</p></>}
  {status?.state==="password"&&<form className="flex flex-wrap gap-2" onSubmit={e=>{e.preventDefault();const p=password;setPassword("");void a.run(async()=>{await request(token,"accounts/"+loginID+"/password","POST",{password:p});return "已提交二次验证"})}}><input aria-label="二次验证密码" className={control} type="password" value={password} autoComplete="off" onChange={e=>setPassword(e.target.value)} required/><button className={primary} disabled={a.busy}>验证</button></form>}
  {status?.state==="authorized"&&<p className="text-sm text-emerald-600">已授权，可刷新群组。</p>}
  {status?.state==="failed"&&<p className="text-sm text-red-500">授权失败，请重新发起扫码。</p>}

@@ -1,11 +1,9 @@
 package telegram
 
 import(
- "bytes"
  "context"
  "encoding/base64"
  "errors"
- "image/png"
  "sync"
  "time"
 
@@ -13,6 +11,7 @@ import(
  "github.com/gotd/td/telegram/auth/qrlogin"
  "github.com/gotd/td/tg"
  "github.com/gotd/td/tgerr"
+ "rsc.io/qr"
 )
 
 type LoginStatus struct{
@@ -64,10 +63,8 @@ func(m *LoginManager)run(ctx context.Context,id int64,a *attempt){
   status,err:=c.Auth().Status(ctx);if err!=nil{return err}
   if !status.Authorized{
    _,err=c.QR().Auth(ctx,loggedIn,func(_ context.Context,token qrlogin.Token)error{
-    img,err:=token.Image(1);if err!=nil{return err}
-    var b bytes.Buffer
-    if err=png.Encode(&b,img);err!=nil{return err}
-    m.set(a,LoginStatus{State:"waiting",QR:"data:image/png;base64,"+base64.StdEncoding.EncodeToString(b.Bytes()),Expires:token.Expires()})
+    data,err:=loginQR(token);if err!=nil{return err}
+    m.set(a,LoginStatus{State:"waiting",QR:data,Expires:token.Expires()})
     return nil
    })
    if tgerr.Is(err,"SESSION_PASSWORD_NEEDED"){
@@ -83,4 +80,13 @@ func(m *LoginManager)run(ctx context.Context,id int64,a *attempt){
  })
  if err!=nil{m.set(a,LoginStatus{State:"failed"});return}
  m.set(a,LoginStatus{State:"authorized"})
+}
+
+// Use the QR encoder's dedicated PNG renderer. rsc.io/qr v0.2.0's
+// Image().At does not apply Scale or the quiet zone when png.Encode reads it.
+func loginQR(token qrlogin.Token)(string,error){
+ code,err:=qr.Encode(token.URL(),qr.M)
+ if err!=nil{return "",err}
+ code.Scale=8
+ return "data:image/png;base64,"+base64.StdEncoding.EncodeToString(code.PNG()),nil
 }
