@@ -24,7 +24,7 @@ func phoneChallenge(sent tg.AuthSentCodeClass,resends int,now time.Time)(LoginSt
   status:=LoginStatus{State:"code",CanResend:v.NextType!=nil&&resends<2}
   switch t:=v.Type.(type){
   case *tg.AuthSentCodeTypeApp:status.Channel="app";status.CodeLength=t.Length
-  case *tg.AuthSentCodeTypeSms:status.Channel="sms";status.CodeLength=t.Length
+  case *tg.AuthSentCodeTypeSMS:status.Channel="sms";status.CodeLength=t.Length
   case *tg.AuthSentCodeTypeCall:status.Channel="call";status.CodeLength=t.Length
   case *tg.AuthSentCodeTypeMissedCall:status.Channel="missed_call";status.CodeLength=t.Length
   default:return LoginStatus{},"",false,errChannel

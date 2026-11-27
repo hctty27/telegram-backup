@@ -12,12 +12,12 @@ import (
 
 func TestPhoneChallenge(t *testing.T){
  now:=time.Now()
- code:=&tg.AuthSentCode{Type:&tg.AuthSentCodeTypeApp{Length:5},PhoneCodeHash:"fixture",NextType:&tg.AuthCodeTypeSms{},Timeout:60}
+ code:=&tg.AuthSentCode{Type:&tg.AuthSentCodeTypeApp{Length:5},PhoneCodeHash:"fixture",NextType:&tg.AuthCodeTypeSMS{},Timeout:60}
  status,hash,done,err:=phoneChallenge(code,0,now)
  if err!=nil||done||hash!="fixture"||status.Channel!="app"||status.CodeLength!=5||!status.CanResend||!status.ResendAt.Equal(now.Add(time.Minute)){t.Fatal("invalid app challenge")}
  status,_,_,err=phoneChallenge(code,2,now)
  if err!=nil||status.CanResend{t.Fatal("resend cap ignored")}
- code.Type=&tg.AuthSentCodeTypeSms{Length:6};code.NextType=nil
+ code.Type=&tg.AuthSentCodeTypeSMS{Length:6};code.NextType=nil
  status,_,_,err=phoneChallenge(code,0,now)
  if err!=nil||status.Channel!="sms"||status.CodeLength!=6||status.CanResend{t.Fatal("invalid SMS challenge")}
  code.Type=&tg.AuthSentCodeTypeSetUpEmailRequired{}
