@@ -38,7 +38,7 @@ func(t *Tracker)Begin(ctx context.Context,id string,mediaID int64,stage string,t
   now:=time.Now()
   elapsed:=now.Sub(p.Updated).Seconds()
   if n==p.Bytes&&elapsed<1{return}
-  if elapsed<0.5&&n!=p.Total&&n>=p.Bytes{return}
+  if elapsed<0.5&&n!=p.Total&&n>=p.Bytes&&p.Bytes!=0{return}
   p.Speed=0
   if elapsed>0&&n>=p.Bytes{p.Speed=float64(n-p.Bytes)/elapsed}
   p.Bytes=n;p.Updated=now
@@ -69,4 +69,5 @@ func(w *countWriter)Write(p []byte)(int,error){
 }
 // The Telegram Stream method writes sequentially; this wrapper does not
 // support concurrent writes or random access.
-func Writer(ctx context.Context,w io.Writer)io.Writer{return &countWriter{ctx:ctx,w:w}}
+func Writer(ctx context.Context,w io.Writer)io.Writer{return WriterFrom(ctx,w,0)}
+func WriterFrom(ctx context.Context,w io.Writer,offset int64)io.Writer{return &countWriter{ctx:ctx,w:w,total:offset}}
