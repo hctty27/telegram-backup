@@ -76,7 +76,7 @@ jobs:
         run: go test -race ./...
       - name: PostgreSQL and River migrations
         run: go run ./cmd/migrate && go run ./cmd/migrate
-      - name: Preview API smoke test
+      - name: Dashboard API smoke test
         shell: bash
         run: |
           set -euo pipefail
@@ -106,9 +106,20 @@ jobs:
             web/package-lock.json
       - name: Build application image
         run: |
+          set -euo pipefail
+          version="main-${GITHUB_SHA:0:12}"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then version="${GITHUB_REF#refs/tags/}"; fi
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then version="pr-${GITHUB_SHA:0:12}"; fi
+          built=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           docker build -f Dockerfile -t telegram-backup:ci \
+            --build-arg TGB_VERSION="$version" \
+            --build-arg TGB_COMMIT="$GITHUB_SHA" \
+            --build-arg TGB_BUILD_TIME="$built" \
             --label org.opencontainers.image.source=https://github.com/hctty27/telegram-backup \
-            --label org.opencontainers.image.revision=${{ github.sha }} .
+            --label org.opencontainers.image.revision="$GITHUB_SHA" \
+            --label org.opencontainers.image.version="$version" \
+            --label org.opencontainers.image.created="$built" .
+          docker run --rm telegram-backup:ci server --version | jq -e --arg version "$version" --arg sha "$GITHUB_SHA" --arg built "$built" '.version == $version and .commit == $sha and .build_time == $built'
       - name: Fresh Compose worker startup smoke test
         shell: bash
         run: |
@@ -120,6 +131,7 @@ jobs:
           export TGB_IMAGE=telegram-backup:ci
           export TGB_BIND_ADDR=127.0.0.1
           docker compose up -d --no-build --pull missing --wait --wait-timeout 120
+          curl -fsS -H "Authorization: Bearer $TGB_ADMIN_TOKEN" http://127.0.0.1:8080/api/version | jq -e --arg sha "$GITHUB_SHA" '.commit == $sha and .version != "local" and .build_time != ""'
           curl -fsS -H "Authorization: Bearer $TGB_ADMIN_TOKEN" http://127.0.0.1:8080/api/capabilities | jq -e '.workers_enabled == true'
           curl -fsS -H "Authorization: Bearer $TGB_ADMIN_TOKEN" http://127.0.0.1:8080/api/monitor | jq -e '.disk.quota_bytes > 0'
       - name: Export verified application image

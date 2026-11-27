@@ -10,7 +10,7 @@ import (
 func TestHealth(t *testing.T) {
 	w := httptest.NewRecorder()
 	NewRouter().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/health", nil))
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "telegram-backup") {
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "telegram-backup") || strings.Contains(w.Body.String(), "stage") {
 		t.Fatalf("unexpected health response: %d %s", w.Code, w.Body.String())
 	}
 }

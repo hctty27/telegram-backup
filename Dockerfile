@@ -15,10 +15,13 @@ COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 COPY web/assets.go ./web/assets.go
 COPY --from=frontend /src/web/dist ./web/dist
+ARG TGB_VERSION=local
+ARG TGB_COMMIT=unknown
+ARG TGB_BUILD_TIME=
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     go mod tidy -diff && go mod verify \
- && CGO_ENABLED=0 go build -trimpath -o /out/server ./cmd/server \
+ && CGO_ENABLED=0 go build -trimpath -ldflags "-X github.com/hctty27/telegram-backup/internal/buildinfo.Version=$TGB_VERSION -X github.com/hctty27/telegram-backup/internal/buildinfo.Commit=$TGB_COMMIT -X github.com/hctty27/telegram-backup/internal/buildinfo.BuildTime=$TGB_BUILD_TIME" -o /out/server ./cmd/server \
  && CGO_ENABLED=0 go build -trimpath -o /out/migrate ./cmd/migrate \
  && CGO_ENABLED=0 go build -trimpath -o /out/telegram-probe ./cmd/telegram-probe
 

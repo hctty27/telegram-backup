@@ -11,6 +11,7 @@ import(
  "strings"
  "time"
 
+ "github.com/hctty27/telegram-backup/internal/buildinfo"
  "github.com/go-chi/chi/v5"
  "github.com/jackc/pgx/v5/pgxpool"
 )
@@ -35,6 +36,10 @@ func NewDashboardRouter(pool *pgxpool.Pool,token string,assets fs.FS, additional
    }
    next.ServeHTTP(w,r)
   })})
+  r.Get("/version",func(w http.ResponseWriter,r *http.Request){
+   w.Header().Set("Content-Type","application/json")
+   _=json.NewEncoder(w).Encode(buildinfo.Current())
+  })
   r.Get("/overview",jsonQuery(pool,`SELECT json_build_object(
    'accounts',(SELECT count(*) FROM telegram_accounts),
    'chats',(SELECT count(*) FROM telegram_chats WHERE enabled),

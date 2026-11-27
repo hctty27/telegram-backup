@@ -11,11 +11,12 @@ import "./styles.css"
 const client=new QueryClient({defaultOptions:{queries:{retry:false,refetchOnWindowFocus:true}}})
 const pages=[{key:"overview",label:"总览",icon:LayoutDashboard},{key:"accounts",label:"Telegram 账号",icon:Users},{key:"chats",label:"群组管理",icon:MessagesSquare},{key:"tasks",label:"任务中心",icon:ListChecks},{key:"archive",label:"媒体归档",icon:Archive},{key:"storage",label:"云存储",icon:Cloud}] as const
 type Page=typeof pages[number]["key"]
+type VersionInfo={service:string;version:string;commit:string;build_time:string;go_version:string;platform:string}
 type Overview={accounts:number;chats:number;completed:number;active:number;failed:number;staged_bytes:number;verified_bytes:number}
 type Row=Record<string,string|number|boolean|null>
 const columns:Record<Exclude<Page,"overview">,[string,string][]>={accounts:[["id","ID"],["display_name","账号"],["enabled","启用"],["created_at","创建时间"]],chats:[["id","ID"],["title","群组名称"],["peer_kind","类型"],["enabled","启用"]],tasks:[["filename","文件"],["state","状态"],["expected_bytes","大小"],["queue_state","队列状态"],["attempt","尝试次数"],["last_error","错误"],["updated_at","更新时间"]],archive:[["filename","文件"],["state","状态"],["expected_bytes","大小"],["updated_at","更新时间"]],storage:[["name","存储名称"],["kind","类型"],["enabled","启用"]]}
 function bytes(n:number){if(!Number.isFinite(n)||n<0)return "—";if(n===0)return "0 B";const unit=["B","KiB","MiB","GiB","TiB"];const i=Math.min(4,Math.floor(Math.log(n)/Math.log(1024)));return (n/1024**i).toFixed(i?1:0)+" "+unit[i]}
-async function load<T,>(page:Page,token:string,signal:AbortSignal):Promise<T>{
+async function load<T,>(page:Page|"version",token:string,signal:AbortSignal):Promise<T>{
  const res=await fetch("/api/"+page,{headers:{Authorization:"Bearer "+token},signal,cache:"no-store"})
  if(!res.ok)throw new Error(res.status===401?"管理令牌无效":"接口暂不可用（"+res.status+"）")
  return res.json()
@@ -38,6 +39,7 @@ function App(){
  const [page,setPage]=useState<Page>("overview"),[token,setToken]=useState(""),[draft,setDraft]=useState(""),[menuOpen,setMenuOpen]=useState(false)
  const [dark,setDark]=useState(()=>window.matchMedia("(prefers-color-scheme: dark)").matches)
  const qc=useQueryClient()
+ const version=useQuery({queryKey:["version"],queryFn:({signal})=>load<VersionInfo>("version",token,signal),enabled:!!token,staleTime:60000})
  useEffect(()=>{document.documentElement.classList.toggle("dark",dark)},[dark])
  const theme=<button aria-label="切换主题" className="icon-button rounded-lg border border-border bg-card" onClick={()=>setDark(!dark)}>{dark?<Sun className="size-4"/>:<Moon className="size-4"/>}</button>
  if(!token)return <main className="login-shell grid min-h-dvh place-items-center p-4"><div className="login-theme absolute">{theme}</div><Card className="w-full min-w-0 max-w-sm p-5 sm:p-8"><div className="mb-6 flex size-11 items-center justify-center rounded-xl bg-blue-600 text-white"><Send className="size-5"/></div><h1 className="text-2xl font-semibold tracking-tight">TelegramBackup</h1><p className="mt-2 text-sm text-muted-foreground">登录自托管备份控制台</p><form className="mt-6 space-y-3" onSubmit={e=>{e.preventDefault();qc.clear();setToken(draft.trim());setDraft("")}}><label htmlFor="token" className="text-sm font-medium">管理令牌</label><input id="token" type="password" autoComplete="off" required minLength={32} className="w-full rounded-lg border border-border bg-background px-3 py-3 text-base md:text-sm" value={draft} onChange={e=>setDraft(e.target.value)} placeholder="输入 TGB_ADMIN_TOKEN"/><button type="submit" className="min-h-11 w-full rounded-lg bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-700">进入控制台</button></form><p className="mt-4 text-xs text-muted-foreground">令牌仅保存在当前页面内存中。请通过可信 HTTPS 或本地连接访问。</p></Card></main>
@@ -57,7 +59,7 @@ function App(){
    <div className="min-w-0 flex-1 break-words text-sm text-muted-foreground"><span className="hidden sm:inline">工作空间 / </span><span className="text-foreground">{pages.find(p=>p.key===page)?.label}</span></div>
    <div className="flex shrink-0 gap-1.5 sm:gap-2">{theme}<button aria-label="刷新数据" className="icon-button rounded-lg border border-border" onClick={()=>void qc.invalidateQueries()}><RefreshCw className="size-4"/></button><button aria-label="退出" className="icon-button rounded-lg border border-border" onClick={()=>{setToken("");setPage("overview");setMenuOpen(false);qc.clear()}}><LogOut className="size-4"/></button></div>
   </header>
-  <div className="mx-auto min-w-0 max-w-7xl space-y-4 p-3 sm:p-5 md:p-8"><div><h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{pages.find(p=>p.key===page)?.label}</h1><p className="mt-1 text-sm text-muted-foreground">Telegram 媒体备份与归档管理</p></div><DataView page={page} token={token}/></div>
+  <div className="mx-auto min-w-0 max-w-7xl space-y-4 p-3 sm:p-5 md:p-8"><div><h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{pages.find(p=>p.key===page)?.label}</h1><p className="mt-1 text-sm text-muted-foreground">Telegram 媒体备份与归档管理</p></div><DataView page={page} token={token}/>{page==="overview"&&<Card className="min-w-0 p-4 sm:p-5"><h2 className="font-medium">版本信息</h2>{version.data?<dl className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 xl:grid-cols-3">{[["版本",version.data.version],["Git Commit",version.data.commit],["构建时间",version.data.build_time?new Date(version.data.build_time).toLocaleString():"未记录"],["Go 版本",version.data.go_version],["运行平台",version.data.platform]].map(([label,val])=><div key={label} className="min-w-0"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 break-all font-mono">{val}</dd></div>)}</dl>:<p className="mt-2 text-sm text-muted-foreground">{version.isError?"版本信息暂不可用":"正在读取版本信息"}</p>}</Card>}</div>
  </main></div>
 }
 createRoot(document.getElementById("root")!).render(<React.StrictMode><QueryClientProvider client={client}><App/></QueryClientProvider></React.StrictMode>)

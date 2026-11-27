@@ -69,3 +69,14 @@ go test -race ./...
 ### 更新依赖
 
 更新 Go 依赖后执行 `go mod tidy`，更新前端依赖后在 `web` 中执行 `npm install --package-lock-only --ignore-scripts`。将依赖声明与对应锁文件放入同一个 PR，复核后再运行完整 CI。依赖锁生成工作流仅提供只读构建产物，不再自动写入分支。不要为了通过测试关闭漏洞扫描或手工伪造校验值。
+
+## 版本管理
+
+主分支镜像使用 `main-<12位提交>` 作为构建版本，保留 `latest` 与 `sha-<完整提交>` 镜像标签；稳定 Git 标签 `vX.Y.Z` 生成对应正式版本镜像。未打稳定标签的 main 构建不冒充正式发行版本。应用和前端展示同一二进制的版本、完整 Git Commit、UTC 构建时间、Go 版本与平台；不同 CPU 架构的实际构建时间可以不同。
+
+```sh
+docker compose exec app server --version
+curl -fsS -H "Authorization: Bearer $TGB_ADMIN_TOKEN" http://127.0.0.1:8080/api/version
+```
+
+`/api/version` 要求管理令牌，`/api/health` 仅返回服务名与存活状态。未配置数据库时服务启动失败，而不是启动无业务功能的预览服务；明确设置 `TGB_ENABLE_WORKERS=false` 的只读运维模式仍保留。本地未注入构建参数时显示 local、unknown 和空构建时间。

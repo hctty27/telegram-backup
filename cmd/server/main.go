@@ -3,6 +3,7 @@ package main
 import (
  "context"
  "errors"
+ "encoding/json"
  "log/slog"
  "net/http"
  "os"
@@ -15,6 +16,7 @@ import (
 
  "github.com/hctty27/telegram-backup/internal/api"
  "github.com/hctty27/telegram-backup/internal/backup"
+ "github.com/hctty27/telegram-backup/internal/buildinfo"
  "github.com/hctty27/telegram-backup/internal/disk"
  "github.com/hctty27/telegram-backup/internal/monitor"
  "github.com/hctty27/telegram-backup/internal/queue"
@@ -26,6 +28,9 @@ import (
 )
 
 func main(){
+ if len(os.Args)==2&&(os.Args[1]=="--version"||os.Args[1]=="-version"){
+  if err:=json.NewEncoder(os.Stdout).Encode(buildinfo.Current());err!=nil{os.Exit(1)};return
+ }
  if len(os.Args)==2&&os.Args[1]=="-healthcheck"{
   c:=&http.Client{Timeout:3*time.Second}
   resp,err:=c.Get("http://127.0.0.1:8080/api/ready")
@@ -37,7 +42,8 @@ func main(){
 func run()error{
  ctx,stop:=signal.NotifyContext(context.Background(),os.Interrupt,syscall.SIGTERM);defer stop()
  addr:=os.Getenv("TGB_HTTP_ADDR");if addr==""{addr="127.0.0.1:8080"}
- var handler http.Handler=api.NewRouter()
+ var handler http.Handler
+ if os.Getenv("TGB_DATABASE_URL")==""{slog.Error("TGB_DATABASE_URL is required");return errors.New("database required")}
  if url:=os.Getenv("TGB_DATABASE_URL");url!=""{
   pool,err:=pgxpool.New(ctx,url);if err!=nil{return err};defer pool.Close()
   check,cancel:=context.WithTimeout(ctx,10*time.Second)
@@ -118,7 +124,7 @@ func run()error{
  }
  srv:=&http.Server{Addr:addr,Handler:handler,ReadHeaderTimeout:5*time.Second,ReadTimeout:15*time.Second,WriteTimeout:60*time.Second,IdleTimeout:60*time.Second,MaxHeaderBytes:32<<10}
  errs:=make(chan error,1)
- go func(){slog.Info("listening","addr",addr);errs<-srv.ListenAndServe()}()
+ go func(){info:=buildinfo.Current();slog.Info("listening","addr",addr,"version",info.Version,"commit",info.Commit,"build_time",info.BuildTime);errs<-srv.ListenAndServe()}()
  select{
  case err:=<-errs:if errors.Is(err,http.ErrServerClosed){return nil};return err
  case <-ctx.Done():shutdown,cancel:=context.WithTimeout(context.Background(),10*time.Second);defer cancel();return srv.Shutdown(shutdown)

@@ -12,7 +12,8 @@ const task={id:"3",filename:long+".mp4",state:"failed",expected_bytes:1234567890
 const remote={id:"4",name:"drive",kind:"drive",enabled:true};
 const disk={staged_bytes:1024,free_bytes:10737418240,quota_bytes:10737418240,reserve_bytes:5368709120,promised_bytes:1024,available_bytes:5368709120};
 const overview={accounts:1,chats:1,completed:1200,active:1,failed:1,staged_bytes:1024,verified_bytes:1234567890123};
-const fixtures={overview,accounts:[account],chats:[group],tasks:[task],archive:[{...task,state:"completed"}],storage:[remote],capabilities:{workers_enabled:true,google_oauth:true}};
+const version={service:"telegram-backup",version:"main-123456789abc",commit:"123456789abcdef0123456789abcdef012345678",build_time:"2026-11-28T00:00:00Z",go_version:"go1.27.4",platform:"linux/amd64"};
+const fixtures={version,overview,accounts:[account],chats:[group],tasks:[task],archive:[{...task,state:"completed"}],storage:[remote],capabilities:{workers_enabled:true,google_oauth:true}};
 const cases=[
  ["compact 320px",chromium,{viewport:{width:320,height:720},isMobile:true,hasTouch:true}],
  ["iPhone Safari emulation",webkit,{...devices["iPhone 13"]}],
@@ -53,6 +54,8 @@ for(const [label,type,options] of cases){
   await page.getByText("已归档文件",{exact:true}).waitFor();
   await page.getByText("磁盘保护",{exact:true}).waitFor();
   assert.equal(await page.getByText("开发版").count(),0,label+" development badge");
+  await page.getByText(version.version,{exact:true}).waitFor();
+  await page.getByText(version.commit,{exact:true}).waitFor();
   await noOverflow(page,label+" overview");
   const mobile=await page.evaluate(()=>matchMedia("(max-width:767px)").matches);
   const nav=page.getByRole("navigation",{name:"主导航"});

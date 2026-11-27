@@ -7,7 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// NewRouter exposes only unauthenticated health checks until admin auth is implemented.
+// NewRouter exposes the unauthenticated liveness endpoint.
 func NewRouter() http.Handler {
 	r := chi.NewRouter()
 	r.Get("/api/health", func(w http.ResponseWriter, r *http.Request) {
@@ -16,7 +16,6 @@ func NewRouter() http.Handler {
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status": "ok",
 			"service": "telegram-backup",
-			"stage": "foundation",
 		})
 	})
 	return r
