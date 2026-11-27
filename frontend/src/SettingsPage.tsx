@@ -19,7 +19,7 @@ import {
   SaveOutlined,
   SendOutlined,
   SettingOutlined,
-  ShieldCheckOutlined
+  CheckCircleOutlined
 } from "@ant-design/icons";
 import { createApi } from "./api";
 import type { AppSettings } from "./types";
