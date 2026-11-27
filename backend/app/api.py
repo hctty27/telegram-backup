@@ -1,4 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from telethon.errors import FloodWaitError, RPCError
+import logging
+import re
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +23,8 @@ from app.schemas import (
     TelegramPhoneIn,
 )
 from app.security import require_admin
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api",
@@ -231,8 +236,28 @@ async def send_telegram_code(payload: TelegramPhoneIn, request: Request):
         await request.app.state.telegram.send_login_code(payload.phone.strip())
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except FloodWaitError as exc:
+        wait_seconds = max(1, int(getattr(exc, "seconds", 1)))
+        logger.warning("Telegram send-code rate limited: wait_seconds=%s", wait_seconds)
+        raise HTTPException(
+            status_code=429,
+            detail=f"Telegram rate limit reached. Wait {wait_seconds} seconds before trying again.",
+        ) from exc
+    except RPCError as exc:
+        rpc_message = str(getattr(exc, "message", "") or type(exc).__name__).upper()
+        safe_code = re.sub(r"[^A-Z0-9_]", "", rpc_message)[:80] or type(exc).__name__
+        rpc_code = getattr(exc, "code", None)
+        logger.warning("Telegram send-code RPC error: %s (code=%s)", safe_code, rpc_code)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Telegram rejected the login request: {safe_code} (code {rpc_code}).",
+        ) from exc
     except Exception as exc:
-        raise HTTPException(status_code=400, detail="Telegram could not send a code. Check the phone number and try again.") from exc
+        logger.exception("Unexpected Telegram send-code failure (type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Telegram login request failed due to a server/network error ({type(exc).__name__}). Check backend logs.",
+        ) from exc
     return {"sent": True}
 
 
