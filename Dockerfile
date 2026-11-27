@@ -1,19 +1,20 @@
 # TelegramBackup Go application, with embedded frontend.
 FROM node:22-bookworm-slim AS frontend
 WORKDIR /src/web
-COPY web/package.json ./
-RUN npm install --no-audit --no-fund
+COPY web/package*.json ./
+RUN if test -f package-lock.json; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
 COPY web/ ./
 RUN npm run build
 
 FROM golang:1.27.4-bookworm AS builder
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum* ./
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 COPY web/assets.go ./web/assets.go
 COPY --from=frontend /src/web/dist ./web/dist
-RUN go mod tidy && CGO_ENABLED=0 go build -trimpath -o /out/server ./cmd/server \
+RUN if test -f go.sum; then go mod tidy -diff && go mod verify; else go mod tidy && go mod verify; fi \
+ && CGO_ENABLED=0 go build -trimpath -o /out/server ./cmd/server \
  && CGO_ENABLED=0 go build -trimpath -o /out/migrate ./cmd/migrate \
  && CGO_ENABLED=0 go build -trimpath -o /out/telegram-probe ./cmd/telegram-probe
 

@@ -42,9 +42,13 @@ jobs:
           cache: false
       - name: Frontend install and typecheck/build
         working-directory: web
-        run: npm install --no-audit --no-fund && npm run build
+        run: |
+          if test -f package-lock.json; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
+          npm run build
       - name: Resolve dependencies
-        run: go mod tidy
+        run: |
+          if test -f go.sum; then go mod tidy -diff; else go mod tidy; fi
+          go mod verify
       - name: Compile and vet
         run: go build ./... && go vet ./...
       - name: Install actual rclone CLI for integration tests
@@ -96,3 +100,30 @@ jobs:
           docker compose up -d --build --wait --wait-timeout 120
           curl -fsS -H "Authorization: Bearer $V2_ADMIN_TOKEN" http://127.0.0.1:8081/api/v2/capabilities | jq -e '.workers_enabled == true'
           curl -fsS -H "Authorization: Bearer $V2_ADMIN_TOKEN" http://127.0.0.1:8081/api/v2/monitor | jq -e '.disk.quota_bytes > 0'
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.4'
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Resolve or validate dependency manifests
+        run: |
+          if test -f go.sum; then go mod tidy -diff; else go mod tidy; fi
+          go mod verify
+          (cd web && if test -f package-lock.json; then npm ci --ignore-scripts --no-audit --no-fund; else npm install --package-lock-only --ignore-scripts --no-audit --no-fund; fi)
+      - name: Scan Go reachable vulnerabilities
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.10.0
+          "$(go env GOPATH)/bin/govulncheck" ./...
+      - name: Audit npm production and build dependencies
+        if: always()
+        working-directory: web
+        run: npm audit --audit-level=high
