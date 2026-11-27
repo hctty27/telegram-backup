@@ -1,11 +1,13 @@
 package api
 
 import(
+ "context"
  "encoding/json"
  "errors"
  "io"
  "net/http"
  "strconv"
+ "time"
 
  "github.com/go-chi/chi/v5"
  "github.com/hctty27/telegram-backup/internal/backup"
@@ -61,7 +63,9 @@ func(a *Actions)Routes(r chi.Router){
  })
  r.Post("/storage",func(w http.ResponseWriter,r *http.Request){
   var req struct{Name string `json:"name"`}
-  if decode(w,r,&req)!=nil||a.Engine.Cloud.TestRemote(r.Context(),req.Name)!=nil{fail(w);return}
+  if decode(w,r,&req)!=nil{fail(w);return}
+  ctx,cancel:=context.WithTimeout(r.Context(),30*time.Second);defer cancel()
+  if a.Engine.Cloud.TestRemote(ctx,req.Name)!=nil{fail(w);return}
   // The operator-provisioned private rclone config is the source of truth.
   // Never return OAuth tokens or accept arbitrary rclone flags or paths.
   _,err:=a.Pool.Exec(r.Context(),`INSERT INTO storage_remotes(name,kind,config_ciphertext,enabled)
