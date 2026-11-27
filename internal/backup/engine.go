@@ -25,7 +25,7 @@ import(
 
 type TelegramSource interface{
  ReadPage(context.Context,int64,tg.InputPeerClass,int,int)(tgservice.Page,error)
- Fetch(context.Context,int64,tg.InputPeerClass,int,string,int64,io.Writer)error
+ Fetch(context.Context,int64,tg.InputPeerClass,int,string,int64,int64,io.Writer)error
 }
 type CloudStore interface{
  UploadVerified(context.Context,string,string,string)(storage.Verified,error)
@@ -153,10 +153,13 @@ func(e *Engine)Download(ctx context.Context,a queue.DownloadArgs)error{
  info,statErr:=os.Lstat(target)
  if statErr==nil{
   if !info.Mode().IsRegular()||info.Size()!=expected{return errors.New("staged file conflict; operator inspection required")}
+  if err=transfer.RecoverPublished(e.Root,a.MediaID);err!=nil{return err}
  }else if errors.Is(statErr,os.ErrNotExist){
   progressCtx,end:=e.Progress.Begin(ctx,fmt.Sprintf("download:%d",a.MediaID),a.MediaID,"download",expected)
-  target,err=transfer.Stage(progressCtx,e.Root,a.MediaID,expected,e.Quota,func(ctx context.Context,w io.Writer)error{
-   return e.Telegram.Fetch(ctx,account,peer,int(msgID),key,expected,monitor.Writer(ctx,w))
+  identity:=fmt.Sprintf("%d/%s/%d/%d/%s",account,kind,peerID,msgID,key)
+  target,err=transfer.StageResume(progressCtx,e.Root,a.MediaID,expected,identity,e.Quota,func(ctx context.Context,offset int64,w io.Writer)error{
+   monitor.Report(ctx,offset)
+   return e.Telegram.Fetch(ctx,account,peer,int(msgID),key,expected,offset,monitor.WriterFrom(ctx,w,offset))
   })
   end()
   if errors.Is(err,disk.ErrCapacity){
