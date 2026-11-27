@@ -60,10 +60,10 @@ func run()error{
    q,err:=disk.New(quotaBytes,reserveBytes,func()(disk.Usage,error){return disk.MeasureDirectory(stage)});if err!=nil{return err}
    service:=telegram.New(pool,box)
    login:=telegram.NewLoginManager(ctx,service)
-   cloud:=&storage.Rclone{Config:filepath.Join(root,"rclone.conf")}
+   cloud:=&storage.Managed{Pool:pool,Box:box}
    engine:=&backup.Engine{Pool:pool,Telegram:service,Cloud:cloud,Quota:q,Progress:monitor.New(),Root:stage,MaxFile:quotaBytes}
    jobs,err:=queue.New(pool,engine.Handlers());if err!=nil{return err};engine.Jobs=jobs
-   actions:=&api.Actions{Pool:pool,Telegram:service,Login:login,Engine:engine}
+   actions:=&api.Actions{Pool:pool,Telegram:service,Login:login,Engine:engine,Managed:cloud}
    handler,err=api.NewDashboardRouter(pool,os.Getenv("V2_ADMIN_TOKEN"),assets,actions.Routes)
    if err!=nil{return err}
    if err=jobs.Start(ctx);err!=nil{return err}
