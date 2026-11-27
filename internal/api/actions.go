@@ -99,5 +99,20 @@ func(a *Actions)Routes(r chi.Router){
    WHERE s.chat_id=$1 AND p.chat_id=s.chat_id AND p.enabled`,id)
   if err!=nil||tag.RowsAffected()!=1{fail(w);return};reply(w,map[string]bool{"ok":true})
  })
+ r.Post("/tasks/{id}/retry",func(w http.ResponseWriter,r *http.Request){
+  id,err:=idParam(r);if err!=nil{fail(w);return}
+  tx,err:=a.Pool.Begin(r.Context());if err!=nil{fail(w);return};defer tx.Rollback(r.Context())
+  var state string
+  if err=tx.QueryRow(r.Context(),"SELECT state FROM media_files WHERE id=$1 FOR UPDATE",id).Scan(&state);err!=nil||state=="completed"||state=="blocked"{fail(w);return}
+  var jobID int64
+  err=tx.QueryRow(r.Context(),`SELECT j.id FROM river_job j WHERE j.state IN ('discarded','cancelled')
+  AND (($2 IN ('discovered','downloading','retry_wait') AND j.kind='media_download' AND j.args->>'media_id'=$1::text)
+  OR ($2 IN ('downloaded','uploading','verifying') AND j.kind='media_upload' AND EXISTS(SELECT 1 FROM media_replicas p WHERE p.media_id=$1 AND p.state<>'verified' AND p.id::text=j.args->>'replica_id'))
+  OR ($2='cleanup_pending' AND j.kind='media_cleanup' AND j.args->>'media_id'=$1::text))
+  ORDER BY j.id DESC LIMIT 1 FOR UPDATE`,id,state).Scan(&jobID)
+  if err!=nil{http.Error(w,"no discarded job to retry",409);return}
+  if _,err=a.Engine.Jobs.JobRetryTx(r.Context(),tx,jobID);err!=nil{fail(w);return}
+  if tx.Commit(r.Context())!=nil{fail(w);return};reply(w,map[string]bool{"ok":true})
+ })
  r.Get("/capabilities",func(w http.ResponseWriter,r *http.Request){reply(w,map[string]any{"workers_enabled":true,"sync_mode":"polling","storage_config":"private rclone config"})})
 }
