@@ -57,6 +57,7 @@ func(m *LoginManager)Password(id int64,password string)error{
 }
 func(m *LoginManager)run(ctx context.Context,id int64,a *attempt){
  defer a.cancel()
+ if m.service.Residents!=nil{resume:=m.service.Residents.Suspend(id);defer resume()}
  dispatcher:=tg.NewUpdateDispatcher()
  loggedIn:=qrlogin.OnLoginToken(&dispatcher)
  err:=m.service.Run(ctx,id,dispatcher,func(ctx context.Context,c *gotd.Client)error{
