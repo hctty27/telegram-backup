@@ -29,9 +29,9 @@ func(s *Service)ImportChats(ctx context.Context,account int64)(int,error){
    if e.Deleted(){return nil}
    var ch Chat
    switch p:=e.Peer.(type){
-   case *tg.InputPeerChat:ch=Chat{ID:p.ChatID,Kind:"chat"};if v:=e.Entities.Chats[p.ChatID];v!=nil{ch.Title=v.Title}
-   case *tg.InputPeerChannel:ch=Chat{ID:p.ChannelID,Hash:p.AccessHash,Kind:"channel"};if v:=e.Entities.Channels[p.ChannelID];v!=nil{ch.Title=v.Title}
-   case *tg.InputPeerUser:ch=Chat{ID:p.UserID,Hash:p.AccessHash,Kind:"user"};if v:=e.Entities.Users[p.UserID];v!=nil{ch.Title=strings.TrimSpace(v.FirstName+" "+v.LastName)}
+   case *tg.InputPeerChat:ch=Chat{ID:p.ChatID,Kind:"chat"};if v:=e.Entities.Chats()[p.ChatID];v!=nil{ch.Title=v.Title}
+   case *tg.InputPeerChannel:ch=Chat{ID:p.ChannelID,Hash:p.AccessHash,Kind:"channel"};if v:=e.Entities.Channels()[p.ChannelID];v!=nil{ch.Title=v.Title}
+   case *tg.InputPeerUser:ch=Chat{ID:p.UserID,Hash:p.AccessHash,Kind:"user"};if v:=e.Entities.Users()[p.UserID];v!=nil{ch.Title=strings.TrimSpace(v.FirstName+" "+v.LastName)}
    default:return nil
    }
    if ch.Title==""{ch.Title=fmt.Sprintf("%s %d",ch.Kind,ch.ID)}
