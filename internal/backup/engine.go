@@ -13,6 +13,7 @@ import(
 
  "github.com/gotd/td/tg"
  "github.com/hctty27/telegram-backup/internal/disk"
+ "github.com/hctty27/telegram-backup/internal/monitor"
  "github.com/hctty27/telegram-backup/internal/queue"
  "github.com/hctty27/telegram-backup/internal/storage"
  tgservice "github.com/hctty27/telegram-backup/internal/telegram"
@@ -36,6 +37,7 @@ type Engine struct{
  Telegram TelegramSource
  Cloud CloudStore
  Quota *disk.Manager
+ Progress *monitor.Tracker
  Root string
  MaxFile int64
  Jobs *river.Client[pgx.Tx]
@@ -152,9 +154,11 @@ func(e *Engine)Download(ctx context.Context,a queue.DownloadArgs)error{
  if statErr==nil{
   if !info.Mode().IsRegular()||info.Size()!=expected{return errors.New("staged file conflict; operator inspection required")}
  }else if errors.Is(statErr,os.ErrNotExist){
-  target,err=transfer.Stage(ctx,e.Root,a.MediaID,expected,e.Quota,func(ctx context.Context,w io.Writer)error{
-   return e.Telegram.Fetch(ctx,account,peer,int(msgID),key,expected,w)
+  progressCtx,end:=e.Progress.Begin(ctx,fmt.Sprintf("download:%d",a.MediaID),a.MediaID,"download",expected)
+  target,err=transfer.Stage(progressCtx,e.Root,a.MediaID,expected,e.Quota,func(ctx context.Context,w io.Writer)error{
+   return e.Telegram.Fetch(ctx,account,peer,int(msgID),key,expected,monitor.Writer(ctx,w))
   })
+  end()
   if errors.Is(err,disk.ErrCapacity){
    _,dbErr:=e.Pool.Exec(ctx,"UPDATE media_files SET state='retry_wait',last_error='waiting for disk space',updated_at=now() WHERE id=$1",a.MediaID)
    if dbErr!=nil{return dbErr};return river.JobSnooze(30*time.Second)
@@ -181,7 +185,8 @@ func(e *Engine)Upload(ctx context.Context,a queue.UploadArgs)error{
  if local!=filepath.Join(e.Root,fmt.Sprintf("%d.media",media)){return errors.New("unexpected staging path")}
  info,err:=os.Lstat(local);if err!=nil||!info.Mode().IsRegular()||info.Size()!=expected{return errors.New("staged file missing or changed")}
  if _,err=e.Pool.Exec(ctx,"UPDATE media_files SET state='uploading',updated_at=now() WHERE id=$1 AND state IN ('downloaded','uploading','verifying')",media);err!=nil{return err}
- v,err:=e.Cloud.UploadVerified(ctx,local,remote,key);if err!=nil{return err};if v.Bytes!=expected{return errors.New("verified size mismatch")}
+ progressCtx,end:=e.Progress.Begin(ctx,fmt.Sprintf("upload:%d",a.ReplicaID),media,"upload",expected)
+ v,err:=e.Cloud.UploadVerified(progressCtx,local,remote,key);end();if err!=nil{return err};if v.Bytes!=expected{return errors.New("verified size mismatch")}
  tx,err:=e.Pool.Begin(ctx);if err!=nil{return err};defer tx.Rollback(ctx)
  // Serialize final verification and the decision to clean up across replicas.
  var locked int64
